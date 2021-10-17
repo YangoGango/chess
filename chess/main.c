@@ -775,7 +775,6 @@ double negaMax(int depth, int alpha , int beta, int color) {
     if (depth <= 0 || checkKing() < 2) {
         return eval(&board) *color;
     }
-    double bestScore = -100000000000;
     Array posMoves; 
     initArr(&posMoves,0);
     getPossibleMoves(&posMoves, color);
@@ -786,49 +785,52 @@ double negaMax(int depth, int alpha , int beta, int color) {
         movePiece(getPieceAtPos((posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy), (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety);
         double value  = -negaMax(depth - 1,-beta,-alpha, -color);
         
-        if (value > bestScore)bestScore = value;
-        if (value > alpha)alpha = value;
+       
         takeBack();
-        if (alpha >= beta) {
-            return alpha; 
-        }
+        if (value > beta) {
+
+            free(posMoves.ptr);
+            return beta;
         
+        }
+        if (value > alpha)alpha = value;
+
     }
-    return bestScore;
+    free(posMoves.ptr);
+    return alpha;
     
 }
 double negaMax1(int depth, int alpha, int beta, int color) {
     if (depth == 0 || checkKing() < 2) {
         return eval(&board) * color;
     }
-    double bestScore = -100000000000;
     Array posMoves;
     initArr(&posMoves, 0);
     getPossibleMoves(&posMoves, color);
 
 
     for (int i = 0; i < posMoves.size; i++) {
-        printf("\r%1.d %% Done\r", (int)((double)i / (double)posMoves.size * 100));
+        printf("\r%1.d %% Done!\r", (int)((double)i / (double)posMoves.size * 100));
         movePiece(getPieceAtPos((posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy), (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety);
         double value = -negaMax(depth - 1, -beta, -alpha, -color);
 
-        if (value > bestScore) { 
-            bestScore = value; 
-            bestMove = (Possiblemove){ (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy , (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety };
-        }
-        if (value > alpha)alpha = value;
         takeBack();
-        //printf("\nMove : (%d, %d) to (%d, %d)\nValue : %f", (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy, (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety, value);
-        if (alpha >= beta) {
+        
+
+
+        if (value > beta) {
             bestMove = (Possiblemove){ (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy , (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety };
-
             free(posMoves.ptr);
-            return alpha;
+            return beta;
+        
         }
-
+        if (value > alpha) {
+            bestMove = (Possiblemove){ (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy , (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety }; 
+            alpha = value; 
+        }
     }//printf("\rDone Calculating\n");
     free(posMoves.ptr);
-    return bestScore;
+    return alpha;
 
 }
 
@@ -1010,7 +1012,7 @@ int main() {
         
         if (cat[0] == 'b' && cat[1] == 'o') {
                 // gets the value of the board and best move is put in the Variable bestMove
-                double val = negaMax1(6, -100000000000, 100000000000   ,turn);
+                double val = negaMax1(5, -100000000000, 100000000000   ,turn);
                 
                 printf("Best Move is %d , %d  to %d, %d \n ", bestMove.posx, bestMove.posy, bestMove.targetx, bestMove.targety);
                 printf("Bot confidence : %f\n", val);
