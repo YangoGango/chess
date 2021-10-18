@@ -1,7 +1,5 @@
 #include<stdio.h>
-#include<string.h>
 #include <windows.h>
-#include <math.h>
 
 // Score Maps for scoring
 int  pawnMap[64] = {
@@ -65,11 +63,15 @@ int kingMap[64] = {
 };
 //converts x and y cords to indexes and gets the positional score from a array of 64 from one of them above
 int getPoints(int map[64] ,int x, int y, int reversed) {
+    x = min(x, 7);
+    y = min(y, 7);
     if (reversed != 1) {
         y = 7 - x;
 
     }
-    return (map[  y*8 +  x ]);
+    if( (y * 8 + x)< 64)
+        return (map[  y*8 +  x ]);
+    return 0;
 }
 // score given per piece
 double _king_Value = 20000;
@@ -102,7 +104,7 @@ typedef struct Possiblemove {
     int targety;
 
 }Possiblemove;
-
+int bestValue =-1000000000; 
 //List Objects / ArrayList
 
 typedef struct  movesList { // List of Moves Meant to keep track of the History of what moves were done
@@ -148,9 +150,11 @@ void changeSize(Array* target, int size) {
     target->realSize = target->size > target->realSize ? target->size : target->realSize;
 }
 void initArr(Array* arr, int size) {
-    arr->ptr =(Possiblemove*) malloc(size * sizeof(Possiblemove));
+    *arr = (Array){ (Possiblemove*)calloc(size , sizeof(Possiblemove)) , size,size};
+    /*
+    arr->ptr =(Possiblemove*) calloc(size , sizeof(Possiblemove));
     arr->size = size;
-    arr->realSize = size;
+    arr->realSize = size;*/
 }
 void addArr(Array* arr, Possiblemove obj) {
     arr->size += 1;
@@ -724,34 +728,41 @@ double eval(ArrayP* board) {
         }
     }
     return pieceScore+ mobilityScore;
-}double Quiesce(double alpha, double beta, int color) {
+}double Quiesce(int depth,double alpha, double beta, int color) {
+    
     double stand_pat = color * eval(&board);
+    if (depth <= 0 || checkKing() < 2) {
+        return stand_pat;
+    }
     if (stand_pat >= beta)
         return beta;
     if (alpha < stand_pat)
         alpha = stand_pat;
 
-    Array posMoves;
-    initArr(&posMoves, 0);
+    Array posMoves =  (Array){ (Possiblemove*)calloc(1 , sizeof(Possiblemove)) , 1,1};
+    //initArr(&posMoves, 0);
     getPossibleMoves(&posMoves, color);
+    int toggle =0;
     for(int i = 0; i < posMoves.size; i++)
     {
-        int posPiece = getPieceAtPos((posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety);
+        int posPiece = getPieceAtPos((posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety);// returns -1 if there is no piece
         if (posPiece != -1 &&((color ==1 &&getArr1(&board , i)->team=='b')||((color != 1 && getArr1(&board, i)->team == 'w')))) { // if the move takes and the taken piece is a enemy
             movePiece(getPieceAtPos((posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy), (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety);
-            double score = -Quiesce(-beta, -alpha,-color);
-            
+            double score = -Quiesce(depth-1,-beta, -alpha,-color);
+            toggle ++;
 
             takeBack();
+
+            if (score > alpha)
+                alpha = score;
             if (score >= beta) {
                 freeArr(&posMoves);
                 return beta;
             }
-            if (score > alpha)
-                alpha = score;
         }
     }
     freeArr(&posMoves);
+    if(toggle ==0)return stand_pat;
     return alpha;
 }
 
@@ -773,7 +784,8 @@ int alphaBeta(int alpha, int beta, int depthleft, int color) {
 double negaMax(int depth, int alpha , int beta, int color) {
 
     if (depth <= 0 || checkKing() < 2) {
-        return eval(&board) *color;
+        return
+            Quiesce(6,alpha, beta, color);
     }
     Array posMoves; 
     initArr(&posMoves,0);
@@ -802,7 +814,8 @@ double negaMax(int depth, int alpha , int beta, int color) {
 }
 double negaMax1(int depth, int alpha, int beta, int color) {
     if (depth == 0 || checkKing() < 2) {
-        return eval(&board) * color;
+        return
+            Quiesce(4,alpha, beta, color);
     }
     Array posMoves;
     initArr(&posMoves, 0);
@@ -816,16 +829,18 @@ double negaMax1(int depth, int alpha, int beta, int color) {
 
         takeBack();
         
-
+if(bestValue< value){
+    bestMove = (Possiblemove){ (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy , (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety }; 
+            bestValue=value;
+}
 
         if (value > beta) {
-            bestMove = (Possiblemove){ (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy , (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety };
+            //bestMove = (Possiblemove){ (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy , (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety };
             free(posMoves.ptr);
             return beta;
         
         }
         if (value > alpha) {
-            bestMove = (Possiblemove){ (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy , (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety }; 
             alpha = value; 
         }
     }//printf("\rDone Calculating\n");
@@ -1003,18 +1018,20 @@ int main() {
         if (cat[0] == 'e')
             if (cat[1] == 'v') {
                 targetDepth = 14;
-                printf("eval : %f\n NegaMax : %f \n" , eval(&board), negaMax1(6, -100000000000, 100000000000, turn));
-                
+                printf("eval : %f\n NegaMax : %f \n" , eval(&board), negaMax1(6, -1000000000, 1000000000, turn));
+                                                                                    
             }else if (cat[1] == 'x') 
                 return 0;
 
         // if user puts word bo at start then it will let the bot make it's move
         
         if (cat[0] == 'b' && cat[1] == 'o') {
+            
+            bestValue = -10000000;
                 // gets the value of the board and best move is put in the Variable bestMove
-                double val = negaMax1(5, -100000000000, 100000000000   ,turn);
+                double val = negaMax1(5, -1000000000, 1000000000,turn);
                 
-                printf("Best Move is %d , %d  to %d, %d \n ", bestMove.posx, bestMove.posy, bestMove.targetx, bestMove.targety);
+                printf("Best Move is %c%d  to %c%d \n ", ((7-bestMove.posx)+65), bestMove.posy+1, (7-bestMove.targetx)+65, bestMove.targety+1);
                 printf("Bot confidence : %f\n", val);
                 movePiece(getPieceAtPos(bestMove.posx, bestMove.posy), bestMove.targetx, bestMove.targety);
 
@@ -1038,6 +1055,7 @@ int main() {
             possMoves.ptr = malloc(0);
             possMoves.size = 0;
 
+            possMoves.realSize = 0;
             getPossibleMoves(&possMoves, turn);
             int i;
 
@@ -1053,7 +1071,7 @@ int main() {
 
                 movePiece(canMove, 7 - (((int)cat[2] - 65) % 32), (int)cat[3] - 49);
 
-                printf("%d, %d  to %d , %d   Real : %d , %d\n", pickedPosX, pickedPosY, (7 - ((int)cat[2] - 65) % 32), (int)cat[3] - 49, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posx, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posy);
+                printf("%c, %d  to %c , %d   Real : %d , %d\n", 7-pickedPosX+65, pickedPosY+1, cat[2], (int)cat[3] - 49, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posx, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posy);
 
                 printf("\nTurn: %d\n", movesDone.size);
                 turn *= -1;
@@ -1063,7 +1081,7 @@ int main() {
                 printf("\nInvalid Move Try Again\n");
 
 
-        
+            freeArr(&possMoves);
         }
         else {
             printf("\nInvalid Move Try Again\n");
