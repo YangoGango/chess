@@ -1,8 +1,12 @@
 #include<stdio.h>
 #include <windows.h>
+<<<<<<< HEAD
 #include <limits.h>
 #include <time.h>
  unsigned int butterfly[8][8][8][8];
+=======
+
+>>>>>>> afa2099f1046fffa734dd289bc6d36eeddbf0c2f
 // Score Maps for scoring
 int  pawnMap[64] = {
  0,  0,  0,  0,  0,  0,  0,  0,
@@ -251,7 +255,11 @@ void changeSize(Array* target, int size) {
     target->realSize = target->size > target->realSize ? target->size : target->realSize;
 }
 void initArr(Array* arr, int size) {
+<<<<<<< HEAD
     *arr = (Array){ (Possiblemove*)calloc(size , sizeof(Possiblemove)) , 0,size};
+=======
+    *arr = (Array){ (Possiblemove*)calloc(size , sizeof(Possiblemove)) , size,size};
+>>>>>>> afa2099f1046fffa734dd289bc6d36eeddbf0c2f
     /*
     arr->ptr =(Possiblemove*) calloc(size , sizeof(Possiblemove));
     arr->size = size;
@@ -1075,6 +1083,7 @@ double eval(ArrayP* board) {
 
     Array posMoves =  (Array){ (Possiblemove*)calloc(1 , sizeof(Possiblemove)) , 1,1};
     //initArr(&posMoves, 0);
+<<<<<<< HEAD
     getPossibleMovesPV(&posMoves, color);
     indexes* sortedArr =calloc(posMoves.size, sizeof(indexes));
     customHeuristic( &posMoves,sortedArr);
@@ -1084,6 +1093,17 @@ double eval(ArrayP* board) {
            movePiece(getPieceAtPos((posMoves.ptr + (sortedArr+i)->index1)->posx, (posMoves.ptr + (sortedArr+i)->index1)->posy), (posMoves.ptr + (sortedArr+i)->index1)->targetx, (posMoves.ptr + (sortedArr+i)->index1)->targety);
         
             double score = -Quiesce(depth-1,-beta, -alpha,-color);
+=======
+    getPossibleMoves(&posMoves, color);
+    int toggle =0;
+    for(int i = 0; i < posMoves.size; i++)
+    {
+        int posPiece = getPieceAtPos((posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety);// returns -1 if there is no piece
+        if (posPiece != -1 &&((color ==1 &&getArr1(&board , i)->team=='b')||((color != 1 && getArr1(&board, i)->team == 'w')))) { // if the move takes and the taken piece is a enemy
+            movePiece(getPieceAtPos((posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy), (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety);
+            double score = -Quiesce(depth-1,-beta, -alpha,-color);
+            toggle ++;
+>>>>>>> afa2099f1046fffa734dd289bc6d36eeddbf0c2f
 
             takeBack();
 
@@ -1094,12 +1114,19 @@ double eval(ArrayP* board) {
                 freeArr(&posMoves);
                 return beta;
             }
+<<<<<<< HEAD
         
     }
     freeArr(&posMoves);
     if(posMoves.size ==0){
         return stand_pat;
     }
+=======
+        }
+    }
+    freeArr(&posMoves);
+    if(toggle ==0)return stand_pat;
+>>>>>>> afa2099f1046fffa734dd289bc6d36eeddbf0c2f
     return alpha;
 }
 
@@ -1228,6 +1255,7 @@ double negaMax1(int depth, int alpha, int beta, int color) {
         printf("\r%1.d %% Done!\r", (int)((double)i / (double)posMoves.size * 100));
         movePiece(getPieceAtPos((posMoves.ptr + (sortedArr+i)->index1)->posx, (posMoves.ptr + (sortedArr+i)->index1)->posy), (posMoves.ptr + (sortedArr+i)->index1)->targetx, (posMoves.ptr + (sortedArr+i)->index1)->targety);
         
+<<<<<<< HEAD
         double value = -negaMax(depth - 1, -beta, -alpha, -color);
 
         if(takeBack()!=1&&value > beta) {
@@ -1243,12 +1271,26 @@ double negaMax1(int depth, int alpha, int beta, int color) {
             alpha = value; 
         }
         if (alpha > beta) {
+=======
+if(bestValue< value){
+    bestMove = (Possiblemove){ (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy , (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety }; 
+            bestValue=value;
+}
+
+        if (value > beta) {
+>>>>>>> afa2099f1046fffa734dd289bc6d36eeddbf0c2f
             //bestMove = (Possiblemove){ (posMoves.ptr + i)->posx, (posMoves.ptr + i)->posy , (posMoves.ptr + i)->targetx, (posMoves.ptr + i)->targety };
             free(posMoves.ptr);
             free(sortedArr);
             return beta;
         
         }
+<<<<<<< HEAD
+=======
+        if (value > alpha) {
+            alpha = value; 
+        }
+>>>>>>> afa2099f1046fffa734dd289bc6d36eeddbf0c2f
     }//printf("\rDone Calculating\n");
             free(sortedArr);
     free(posMoves.ptr);
@@ -1428,7 +1470,11 @@ int main() {
         if (cat[0] == 'e')
             if (cat[1] == 'v') {
                 targetDepth = 14;
+<<<<<<< HEAD
                 printf("eval : %f\n ID : %ld \n" , eval(&board),hash(&board));
+=======
+                printf("eval : %f\n NegaMax : %f \n" , eval(&board), negaMax1(6, -1000000000, 1000000000, turn));
+>>>>>>> afa2099f1046fffa734dd289bc6d36eeddbf0c2f
                                                                                     
             }else if (cat[1] == 'x') 
                 return 0;
@@ -1436,17 +1482,25 @@ int main() {
         // if user puts word bo at start then it will let the bot make it's move
         
         if (cat[0] == 'b' && cat[1] == 'o') {
+<<<<<<< HEAD
             long seconds = time(NULL);
             for(int from = 0 ; from < 8;from++)
                 for(int to = 0 ; to < 8;to++)
                 for(int from1 = 0 ; from1 < 8;from1++)
                 for(int to1 = 0 ; to1 < 8;to1++)
                 butterfly[from][to][from1][to1]=0;
+=======
+            
+>>>>>>> afa2099f1046fffa734dd289bc6d36eeddbf0c2f
             bestValue = -10000000;
                 // gets the value of the board and best move is put in the Variable bestMove
                 double val = negaMax1(5, -1000000000, 1000000000,turn);
                 
+<<<<<<< HEAD
                 printf("Took %ld seconds\nBest Move is %c%d  to %c%d \n ",time(0)-seconds , ((7-bestMove.posx)+65), bestMove.posy+1, (7-bestMove.targetx)+65, bestMove.targety+1);
+=======
+                printf("Best Move is %c%d  to %c%d \n ", ((7-bestMove.posx)+65), bestMove.posy+1, (7-bestMove.targetx)+65, bestMove.targety+1);
+>>>>>>> afa2099f1046fffa734dd289bc6d36eeddbf0c2f
                 printf("Bot confidence : %f\n", val);
                 movePiece(getPieceAtPos(bestMove.posx, bestMove.posy), bestMove.targetx, bestMove.targety);
 
