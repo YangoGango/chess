@@ -1564,6 +1564,7 @@ double negaMax1(int depth, int alpha, int beta, int color)
         }
     }
     free(sortedArr);
+    }//printf("\rDone Calculating\n");
     free(posMoves.ptr);
     return alpha;
 }
@@ -1746,13 +1747,12 @@ int main()
         if (cat[0] == 'e')
             if (cat[1] == 'v')
             {
-                targetDepth = 14;
                 printf("eval : %f\n ID : %ld \n", eval(&board), hash(&board));
             }
             else if (cat[1] == 'x')
+            }else if (cat[1] == 'x') 
                 return 0;
 
-        // if user puts word bo at start then it will let the bot make it's move
 
         if (cat[0] == 'b' && cat[1] == 'o')
         {
@@ -1797,10 +1797,11 @@ int main()
                 Array possMoves;
                 possMoves.ptr = malloc(0);
                 possMoves.size = 0;
-
+            possMoves.size = 0;
                 possMoves.realSize = 0;
                 getPossibleMoves(&possMoves, turn);
                 int i;
+            int i;
 
                 for (i = 0; i < possMoves.size; i++)
                 { // searches for the move specified by the Human and is in the list of possible moves
@@ -1816,8 +1817,8 @@ int main()
                 { // if  the move is specified by the Human and is in the list of possible moves
 
                     movePiece(canMove, 7 - (((int)cat[2] - 65) % 32), (int)cat[3] - 49);
-
                     printf("%c, %d  to %c , %d   Real : %d , %d\n", 7 - pickedPosX + 65, pickedPosY + 1, cat[2], (int)cat[3] - 49, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posx, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posy);
+                printf("%d, %d  to %d , %d   Real : %d , %d\n", pickedPosX, pickedPosY, (7 - ((int)cat[2] - 65) % 32), (int)cat[3] - 49, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posx, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posy);
 
                     printf("\nTurn: %d\n", movesDone.size);
                     turn *= -1;
@@ -1825,7 +1826,6 @@ int main()
                 }
                 else
                     printf("\nInvalid Move Try Again\n");
-
                 freeArr(&possMoves);
             }
             else
@@ -1833,6 +1833,7 @@ int main()
                 printf("\nInvalid Move Try Again\n");
             }
         } /*
+            }/*
             printf("Looking at %d\n" , movesDone.size-1);
             for (int i = 0; i < movesDone.size; i++) {
                 move* look = (movesDone.ptr + i);
