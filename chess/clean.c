@@ -4,28 +4,17 @@
 #include <limits.h>
 #include <math.h>
 #include <time.h>
-const int ONE_MB = 1048576;
 unsigned int butterfly[8][8][8][8];
 long nodesProcessed = 0;
 unsigned int butterfly_PV[8][8][8][8];
 long long whiteornot;
-long long numNodes = 0;
-int searched=0;
+long numNodes = 0;
 int bobby = 0;
 int targetedDepth = 5; // Looks this move or even more ahead
 int expandedDepth = 6; // Looks this moves ahead after the intial depth but is more select
 int unwantedDepth = 2; // Anything moves equal or under than this is considered not worth it to store
 // Score Maps for scoring
-int gameState = 1; // 1: Opening 2: Midgame 3: Endgame
-double _king_Value = 20000;
-double _queen_Value = 900;
-double _rook_Value = 500;
-double _bishop_Value = 330;
-double _knight_Value = 320;
-double _pawn_Value = 100;
-int endGameCutoff = 21500;
-int cancelSearch = 0;
-time_t timeEnd = 10000000000000000;
+
 int pawnMap[64] = {
     0, 0, 0, 0, 0, 0, 0, 0,
     50, 50, 50, 50, 50, 50, 50, 50,
@@ -92,7 +81,6 @@ typedef struct Possiblemove
     char type;
 
 } Possiblemove;
-//Value node depth flag
 typedef struct nodeValue
 {
     int value;
@@ -105,19 +93,12 @@ struct Node
     long long key;
     int value;
     short depth;
-    int age;
-
-    int timesSearched;
+    short age;
     char flag;
     struct Node *left;
     struct Node *right;
     Possiblemove move;
     unsigned short height;
-};
-struct memoryList
-{
-    struct Node *data;
-    struct memoryList *next;
 };
 
 // A utility function to get the height of the tree
@@ -137,7 +118,8 @@ int Max(int a, int b)
     NULL left and right pointers. */
 struct Node *newNode(nodeValue key, Possiblemove *move)
 {
-    struct Node *node = malloc(sizeof(struct Node));
+    struct Node *node = (struct Node *)
+        malloc(sizeof(struct Node));
     node->key = key.node;
     node->value = key.value;
     node->depth = key.depth;
@@ -145,8 +127,7 @@ struct Node *newNode(nodeValue key, Possiblemove *move)
     node->move = *move;
     node->left = NULL;
     node->right = NULL;
-    node->age = node->depth * 4;
-    node->timesSearched = node->depth * 4;
+    node->age = 0;
     node->left = NULL;
     node->right = NULL;
     node->height = 1; // new node is initially added at leaf
@@ -193,20 +174,23 @@ struct Node *leftRotate(struct Node *x)
 
 struct Node *search(struct Node *root, long long x)
 {
+
     if (root == NULL) //if root->data is x then the element is found
         return root;
-    root->timesSearched++;
     if ((root->key) == x)
     {
-        root->age++;
+        root->age = 0;
         return root;
     }
+
+    root->age++;
 
     if (x > root->key) // x is greater, so we will search the right subtree
         return search(root->right, x);
     else //x is smaller than the data, so we will search the left subtree
         return search(root->left, x);
 }
+
 int getHeight(struct Node *left)
 {
     if (left->left == NULL)
@@ -235,7 +219,6 @@ struct Node *insert(struct Node *node, nodeValue key, Possiblemove *move)
         node->depth = key.depth;
         node->value = key.value;
         node->flag = key.flag;
-        node->move = *move;
         return node;
     }
     if (key.node < node->key)
@@ -282,274 +265,35 @@ struct Node *insert(struct Node *node, nodeValue key, Possiblemove *move)
     /* return the (unchanged) node pointer */
     return node;
 }
-struct Node *minValueNode(struct Node *node)
-{
-    struct Node *current = node;
-
-    /* loop down to find the leftmost leaf */
-    while (current->left != NULL)
-        current = current->left;
-
-    return current;
-}
-
-// Recursive function to delete a node with given key
-// from subtree with given root. It returns root of
-// the modified subtree.
-
-struct Node *deleteNode(struct Node *root, int key)
-{
-    // STEP 1: PERFORM STANDARD BST DELETE
-
-    if (root == NULL)
-        return root;
-
-    // If the key to be deleted is smaller than the
-    // root's key, then it lies in left subtree
-    if (key < root->key)
-        root->left = deleteNode(root->left, key);
-
-    // If the key to be deleted is greater than the
-    // root's key, then it lies in right subtree
-    else if (key > root->key)
-        root->right = deleteNode(root->right, key);
-
-    // if key is same as root's key, then This is
-    // the node to be deleted
-    else
-    {
-        // node with only one child or no child
-        if ((root->left == NULL) || (root->right == NULL))
-        {
-            struct Node *temp = root->left ? root->left : root->right;
-
-            // No child case
-            if (temp == NULL)
-            {
-                temp = root;
-                root = NULL;
-            }
-            else               // One child case
-                *root = *temp; // Copy the contents of
-                               // the non-empty child
-            free(temp);
-        }
-        else
-        {
-            // node with two children: Get the inorder
-            // successor (smallest in the right subtree)
-            struct Node *temp = minValueNode(root->right);
-
-            // Copy the inorder successor's data to this node
-            root->key = temp->key;
-            root->value = temp->value;
-            root->depth = temp->depth;
-            root->flag = temp->flag;
-            root->move = temp->move;
-            root->age = temp->age;
-            root->timesSearched = temp->timesSearched;
-            // Delete the inorder successor
-            root->right = deleteNode(root->right, root->right->key);
-        }
-    }
-
-    // If the tree had only one node then return
-    if (root == NULL)
-        return root;
-
-    // STEP 2: UPDATE HEIGHT OF THE CURRENT NODE
-    root->height = 1 + max(height(root->left),
-                           height(root->right));
-
-    // STEP 3: GET THE BALANCE FACTOR OF THIS NODE (to
-    // check whether this node became unbalanced)
-    int balance = getBalance(root);
-
-    // If this node becomes unbalanced, then there are 4 cases
-
-    // Left Left Case
-    if (balance > 1 && getBalance(root->left) >= 0)
-        return rightRotate(root);
-
-    // Left Right Case
-    if (balance > 1 && getBalance(root->left) < 0)
-    {
-        root->left = leftRotate(root->left);
-        return rightRotate(root);
-    }
-
-    // Right Right Case
-    if (balance < -1 && getBalance(root->right) <= 0)
-        return leftRotate(root);
-
-    // Right Left Case
-    if (balance < -1 && getBalance(root->right) > 0)
-    {
-        root->right = rightRotate(root->right);
-        return leftRotate(root);
-    }
-
-    return root;
-}
-struct Node *deleteNodeCut(struct Node *root)
-{
-    // STEP 1: PERFORM STANDARD BST DELETE
-
-    if (root == NULL)
-        return root;
-    // if it makes the cut don't delete
-    // node with only one child or no child
-    if ((root->left == NULL) || (root->right == NULL))
-    {
-        struct Node *temp = root->left ? root->left : root->right;
-
-        // No child case
-        if (temp == NULL)
-        {
-            temp = root;
-            root = NULL;
-        }
-        else               // One child case
-            *root = *temp; // Copy the contents of
-                           // the non-empty child
-        free(temp);
-    }
-    else
-    {
-        // node with two children: Get the inorder
-        // successor (smallest in the right subtree)
-        struct Node *temp = minValueNode(root->right);
-
-        // Copy the inorder successor's data to this node
-        root->key = temp->key;
-        root->value = temp->value;
-        root->depth = temp->depth;
-        root->flag = temp->flag;
-        root->move = temp->move;
-        root->age = temp->age;
-
-        root->timesSearched = temp->timesSearched;
-        // Delete the inorder successor
-        root->right = deleteNode(root->right, root->right->key);
-    }
-
-    // If the tree had only one node then return
-    if (root == NULL)
-        return root;
-
-    // STEP 2: UPDATE HEIGHT OF THE CURRENT NODE
-    root->height = 1 + max(height(root->left),
-                           height(root->right));
-
-    // STEP 3: GET THE BALANCE FACTOR OF THIS NODE (to
-    // check whether this node became unbalanced)
-    int balance = getBalance(root);
-
-    // If this node becomes unbalanced, then there are 4 cases
-
-    // Left Left Case
-    if (balance > 1 && getBalance(root->left) >= 0)
-        return rightRotate(root);
-
-    // Left Right Case
-    if (balance > 1 && getBalance(root->left) < 0)
-    {
-        root->left = leftRotate(root->left);
-        return rightRotate(root);
-    }
-
-    // Right Right Case
-    if (balance < -1 && getBalance(root->right) <= 0)
-        return leftRotate(root);
-
-    // Right Left Case
-    if (balance < -1 && getBalance(root->right) > 0)
-    {
-        root->right = rightRotate(root->right);
-        return leftRotate(root);
-    }
-
-    return root;
-}
-struct Node *deleteCurrentNode(struct Node *root, int key)
-{
-}
-double totalAge = 0;
-double totalDepth = 0;
-double numOfNodes = 0;
-double counterOfNodes = 0;
-double memoryCutOff = 200 * 1048576;
-void count(struct Node *root)
-{
-
-    if (root == NULL) //if root->data is x then the element is found
-        return;
-
-    counterOfNodes++;
-    count(root->right);
-    count(root->left);
-    totalAge += root->age;
-    totalDepth += root->depth;
-    numOfNodes += root->timesSearched;
-}
-
-void clearTree(struct Node *rootRoot, struct Node *root, double agecutoff)
-{
-
-    if (root == NULL) //if root->data is x then the element is found
-        return;
-    clearTree(root, root->right, agecutoff);
-    clearTree(root, root->left, agecutoff);
-    if (rootRoot != NULL && (root->timesSearched == 0 || root->age / root->timesSearched < agecutoff))
-    {
-        deleteNode(rootRoot, root->key);
-    }
-}
-
-void destroyTree(struct Node *root)
-{
-
-    if (root == NULL) //if root->data is x then the element is found
-        return;
-
-    destroyTree(root->right);
-    destroyTree(root->left);
-    free(root);
-}
-// A utility function to print preorder traversal of
-// the tree.
-// The function also prints height of every node
 
 // A utility function to print preorder traversal
 // of the tree.
 // The function also prints height of every node
-void preOrder(struct Node *root, unsigned long long *output)
+void preOrder(struct Node *root)
 {
     if (root != NULL)
     {
-        *output++;
-        preOrder(root->left, output);
-        preOrder(root->right, output);
+        printf("%lld ", root->key);
+        preOrder(root->left);
+        preOrder(root->right);
     }
 }
-void refreshNodes(struct Node *root, int canDelete)
+void refreshNodes(struct Node *root)
 {
     if (root != NULL)
     {
 
-        refreshNodes(root->left, 1);
-        refreshNodes(root->right, 1);
-        root->left = NULL;
-        root->right = NULL;
+        refreshNodes(root->left);
+        refreshNodes(root->right);
         free(root);
     }
 }
 
 typedef struct NodeArray
-{                          // 12 bytes total not including where the pointers point to
-    nodeValue *ptr;        // 8 bytes
-    unsigned int size;     //4 bytes
-    unsigned int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
+{                   // 12 bytes total not including where the pointers point to
+    nodeValue *ptr; // 8 bytes
+    int size;       //4 bytes
+    int realSize;   // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
     // the variable above is not really needed
 } NodeArray;
 //converts x and y cords to indexes and gets the positional score from a array of 64 from one of them above
@@ -566,6 +310,12 @@ int getPoints(int map[64], int x, int y, int reversed)
     return 0;
 }
 // score given per piece
+double _king_Value = 20000;
+double _queen_Value = 900;
+double _rook_Value = 500;
+double _bishop_Value = 330;
+double _knight_Value = 320;
+double _pawn_Value = 100;
 
 // Objects
 typedef struct piece
@@ -577,7 +327,6 @@ typedef struct piece
 } piece;
 
 int boardHashMap[8][8];
-
 typedef struct move
 {
     int posx;
@@ -586,7 +335,6 @@ typedef struct move
     int targety;
     char type;
     char team;
-    char takingpiece;
 } move;
 int bestValue = -1000000000;
 //List Objects / ArrayList
@@ -594,37 +342,26 @@ int NodeValueSizesize = sizeof(nodeValue);
 typedef struct movesList
 { // List of Moves Meant to keep track of the History of what moves were done
     move *ptr;
-    unsigned int size;     //Desired Size
-    unsigned int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
+    int size;     //Desired Size
+    int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
 } movesList;
 typedef struct Array
-{                          // 12 bytes total not including where the pointers point to
-    Possiblemove *ptr;     // 8 bytes
-    unsigned int size;     //4 bytes
-    unsigned int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
+{                      // 12 bytes total not including where the pointers point to
+    Possiblemove *ptr; // 8 bytes
+    int size;          //4 bytes
+    int realSize;      // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
     // the variable above is not really needed
 } Array;
 
 typedef struct ArrayP
-{                          // Board Object / Array of Pieces
-    piece *ptr;            // 8 bytes
-    unsigned int size;     //4 bytes
-    unsigned int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
+{                 // Board Object / Array of Pieces
+    piece *ptr;   // 8 bytes
+    int size;     //4 bytes
+    int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
 } ArrayP;
 
 ArrayP board;        // Array of Pieces on the Board
 movesList movesDone; // List of moves Done
-
-void initBoardHashMap()
-{
-    for (int i = 0; i < 8; i++)
-    {
-        for (int e = 0; e < 8; e++)
-            boardHashMap[e][i] = -1;
-    }
-    for (int i = 0; i < board.size; i++)
-        boardHashMap[board.ptr[i].posx][board.ptr[i].posy] = i;
-}
 void changeSize(Array *target, int size)
 {
 
@@ -685,8 +422,6 @@ void removeArr1(ArrayP *arr, int pos)
     {
         *(arr->ptr + i) = *(arr->ptr + i + 1);
     }
-
-    initBoardHashMap();
 }
 /// <summary>
 /// Initializes a Array given the Address of an Array
@@ -704,7 +439,7 @@ void initArr1(ArrayP *arr, int size)
 /// </summary>
 /// <param name="ArrayP* array;"></param>
 /// <param name="piece obj;"></param>
-int addArr1(ArrayP *arr, piece obj)
+void addArr1(ArrayP *arr, piece obj)
 { //
     arr->size += 1;
 
@@ -712,7 +447,6 @@ int addArr1(ArrayP *arr, piece obj)
         changeSize1(arr, arr->size);
 
     *(arr->ptr + (arr->size - 1)) = obj;
-    return (arr->size - 1);
 }
 /// <summary>
 /// Get Info from position i relitive to the address and memory location
@@ -749,7 +483,7 @@ void removeFromTop(movesList *arr)
 void changeSizeList(movesList *target, int size)
 {
     if (target->size > target->realSize)
-        target->ptr = (move *)realloc(target->ptr, size * sizeof(move));
+        target->ptr = (move *)realloc((*target).ptr, size * sizeof(move));
     target->size = size;
 
     target->realSize = target->size > target->realSize ? target->size : target->realSize;
@@ -792,18 +526,26 @@ int getPieceAtPosHash(int x, int y)
 {
     return boardHashMap[x][y];
 }
+void initBoardHashMap()
+{
+    for (int i = 0; i < 8; i++)
+    {
+        for (int e = 0; e < 8; e++)
+            boardHashMap[e][i] = -1;
+    }
+    for (int i = 0; i < board.size; i++)
+        boardHashMap[board.ptr[i].posx][board.ptr[i].posy] = i;
+}
 // Moves a piece in the array 'board' in the specified location of the array to the x and y cordinates
 void movePiece(int location, int x, int y)
 {
-    int i = getPieceAtPosHash(x, y);
+    int i = getPieceAtPos(x, y);
 
-    boardHashMap[(board.ptr + location)->posx][(board.ptr + location)->posy] = -1;
-    
     move temp;
     // if it found something in the loop above (a piece in the x and y cords)
     if (i != -1)
     {
-        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, (board.ptr + i)->type, (board.ptr + i)->team, (board.ptr + location)->type};
+        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, (board.ptr + i)->type, (board.ptr + i)->team};
 
         (board.ptr + location)->posx = x;
         (board.ptr + location)->posy = y;
@@ -812,22 +554,19 @@ void movePiece(int location, int x, int y)
     else
     {
 
-        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, '-', '-',(board.ptr + location)->type};
+        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, '-', '-'};
         (board.ptr + location)->posx = x;
         (board.ptr + location)->posy = y;
     }
-   
-    boardHashMap[x][y] = location;
     //Adds move to movelist
     addArrList(&movesDone, temp);
+    initBoardHashMap();
 }
-// Moves a piece in the array 'board' in the specified location of the array to the x and y cordinates NO CAPTURES
+// Moves a piece in the array 'board' in the specified location of the array to the x and y cordinates NO QUESTIONS ASKED
 void movePieceFast(int location, int x, int y)
 {
-    boardHashMap[(board.ptr + location)->posx][(board.ptr + location)->posy] = -1;
     (board.ptr + location)->posx = x;
     (board.ptr + location)->posy = y;
-    boardHashMap[x][y] = location;
 }
 
 //looks in the Array movesDone and reverses a move
@@ -835,26 +574,21 @@ int takeBack()
 {
     if (movesDone.size > 0)
     {
-            initBoardHashMap();
         move *lookat = (((movesDone.ptr + movesDone.size - 1)));
 
         int canMove = getPieceAtPos(lookat->targetx, lookat->targety);
-        //(board.ptr + canMove)->type= lookat->takingpiece;
         //move the piece back
         movePieceFast(canMove, lookat->posx, lookat->posy);
         //if there was a piece where there were add it back
         if (lookat->type != '-' && lookat->team != '-')
         {
-
-            boardHashMap[lookat->targetx][lookat->targety] = addArr1(&board, (piece){lookat->targetx, lookat->targety, lookat->type, lookat->team});
+            addArr1(&board, (piece){lookat->targetx, lookat->targety, lookat->type, lookat->team});
             movesDone.size--;
-
             initBoardHashMap();
             return 1;
         }
         movesDone.size--;
     }
-
     initBoardHashMap();
     return 0;
 }
@@ -888,60 +622,6 @@ static struct Node *ttAble2;
 static struct Node *ttAble_PV;
 
 static struct Node *ttAble_PV2;
-
-void iterate(struct Node *root, struct Node *sum, float cutoff)
-{
-
-    if (root == NULL) //if root->data is x then the element is found
-        return;
-
-    iterate(root->right, sum, cutoff);
-    iterate(root->left, sum, cutoff);
-    if (root->timesSearched == 0 || ((float)root->age) / ((float)root->timesSearched) * (float)root->depth >= cutoff)
-        insert(sum, (nodeValue){root->value, root->key, root->depth, root->flag}, &(root->move));
-    free(root);
-}
-struct Node *copy(struct Node *root, float cutoff)
-{
-    struct Node *temp = NULL;
-    iterate(root, temp, cutoff);
-    return temp;
-}
-void memFree()
-{
-    printf("clearing\n");
-    numOfNodes = 0;
-    totalAge = 0;
-
-    totalDepth = 0;
-    counterOfNodes = 0;
-    double ratios[4] = {0, 0, 0, 0};
-    count(ttAble);
-    ratios[0] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
-    numOfNodes = 0;
-    totalAge = 0;
-    totalDepth = 0;
-    count(ttAble2);
-    ratios[1] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
-    numOfNodes = 0;
-    totalAge = 0;
-    totalDepth = 0;
-    count(ttAble_PV);
-    ratios[2] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
-    numOfNodes = 0;
-    totalAge = 0;
-    totalDepth = 0;
-    count(ttAble_PV2);
-    ratios[3] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
-    double cutOff = (memoryCutOff / (counterOfNodes * sizeof(struct Node)));
-
-    ttAble = copy(ttAble, cutOff * ratios[0]);
-    ttAble2 = copy(ttAble2, cutOff * ratios[1]);
-    ttAble_PV = copy(ttAble_PV, cutOff * ratios[2]);
-    ttAble_PV2 = copy(ttAble_PV2, cutOff * ratios[3]);
-
-    printf("done\n");
-}
 int checkKing()
 { // gets the number of kings on board
     int kings = 0;
@@ -966,6 +646,7 @@ int addNCheck(Array *output, Possiblemove obj, int color)
         // get the Target or -1 if there is none
         //int num = getPieceAtPos(obj.targetx, obj.targety);
 
+        initBoardHashMap();
         int num = boardHashMap[obj.targetx][obj.targety];
         // Checks if there is nothing there
         if (num < 0)
@@ -1125,6 +806,7 @@ long long hash(ArrayP *pieceMap)
 }
 void getPossibleMoves(Array *output, int color)
 { // Adds all possible moves to output array
+    initBoardHashMap();
     for (int i = 0; i < board.size; i++)
     {                                         // iterates through all pieces on board
         piece *selPiece = getArr1(&board, i); // selected piece
@@ -1261,6 +943,7 @@ void getPossibleMoves(Array *output, int color)
 
 void getPossibleMovesPV(Array *output, int color)
 { // Adds all possible moves to output array
+    initBoardHashMap();
     for (int i = 0; i < board.size; i++)
     {
         piece *selPiece = getArr1(&board, i);
@@ -1534,7 +1217,6 @@ typedef struct indexes
     int index1;
     int index2;
 } indexes;
-
 int compareIndexes(const void *a, const void *b)
 {
     return (((indexes *)b)->index2 - ((indexes *)a)->index2);
@@ -1563,43 +1245,29 @@ double eval(ArrayP *board)
 {
     double pieceScore = 0;
     double mobilityScore = 0;
-    mobilityScore = getNumPossibleMoves(1) - getNumPossibleMoves(-1);
-    //printf("%f \n",mobilityScore);
-    double whiteMaterialScore = 0;
-    double blackMaterialScore = 0;
+    //mobilityScore += getNumPossibleMoves(1) - getNumPossibleMoves(-1);
+
     for (int i = 0; i < board->size; i++)
     {
         if ((board->ptr + i)->team == 'w')
         {
-            whiteMaterialScore += getPieceVal((board->ptr + i));
+            pieceScore += getPieceVal((board->ptr + i));
         }
         else
         {
-
-            blackMaterialScore += getPieceVal((board->ptr + i));
+            pieceScore -= getPieceVal((board->ptr + i));
         }
     }
-    pieceScore = whiteMaterialScore - blackMaterialScore;
-    if (whiteMaterialScore < endGameCutoff || blackMaterialScore < endGameCutoff)
-    {
-        gameState = 3;
-    }
-    else
-        gameState = 2;
-    return pieceScore  + 2*mobilityScore;
+    return pieceScore * 2 + mobilityScore;
 }
 double Quiesce(int depth, double alpha, double beta, int color)
 {
 
     long long boardID = hash(&board);
     double alphaOrig = alpha;
-
-    initBoardHashMap();
     int stand_pat = eval(&board) * color;
     if (stand_pat >= beta)
         return beta;
-    if (gameState < 3 && stand_pat < alpha - 100)
-        return alpha;
     if (alpha < stand_pat)
         alpha = stand_pat;
     Possiblemove localBestMove;
@@ -1632,7 +1300,7 @@ double Quiesce(int depth, double alpha, double beta, int color)
             return (foundNodeAt->value);
         }
     }
-    if (depth == 0 || checkKing() < 2)
+    if (depth <= 0 || checkKing() < 2)
     {
         return stand_pat;
     }
@@ -1641,8 +1309,6 @@ double Quiesce(int depth, double alpha, double beta, int color)
     getPossibleMovesPV(&posMoves, color);
     if (posMoves.size == 0)
     {
-
-        free(posMoves.ptr);
         return stand_pat;
     }
     indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
@@ -1654,6 +1320,7 @@ double Quiesce(int depth, double alpha, double beta, int color)
         initBoardHashMap();
         movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
 
+        initBoardHashMap();
         //double value = -negaMax(depth - 1, -beta, -alpha, -color);
         double value = -Quiesce(depth - 1, -beta, -alpha, -color);
 
@@ -1684,53 +1351,49 @@ double Quiesce(int depth, double alpha, double beta, int color)
             break;
         }
     }
-    if (depth > 4)
-    {
-        if (foundNodeAt == NULL)
-        {
-            char flag;
-            if (val <= alphaOrig)
-            {
-                flag = 'u';
-            }
-            else if (val > beta)
-            {
-                flag = 'l';
-            }
-            else
-            {
-                flag = 'e';
-            }
 
-            if (color == 1)
-            {
-                ttAble_PV = insert(ttAble_PV, (nodeValue){val, boardID, depth, flag}, &localBestMove);
-            }
-            else
-            {
-                ttAble_PV2 = insert(ttAble_PV2, (nodeValue){val, boardID, depth, flag}, &localBestMove);
-            }
+    if (foundNodeAt == NULL)
+    {
+        char flag;
+        if (val <= alphaOrig)
+        {
+            flag = 'u';
+        }
+        else if (val > beta)
+        {
+            flag = 'l';
         }
         else
         {
-            if ((foundNodeAt)->depth < depth)
-            {
+            flag = 'e';
+        }
 
-                if (val <= alphaOrig)
-                {
-                    foundNodeAt->flag = 'u';
-                }
-                else if (val > beta)
-                {
-                    foundNodeAt->flag = 'l';
-                }
-                else
-                {
-                    foundNodeAt->flag = 'e';
-                }
-                foundNodeAt->depth = depth;
-                foundNodeAt->value = val;
+        if (color == 1)
+        {
+            ttAble_PV = insert(ttAble_PV, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+        }
+        else
+            ttAble_PV2 = insert(ttAble_PV2, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+    }
+    else
+    {
+        if ((foundNodeAt)->depth < depth)
+        {
+
+            if (val <= alphaOrig)
+            {
+                foundNodeAt->flag = 'u';
             }
+            else if (val > beta)
+            {
+                foundNodeAt->flag = 'l';
+            }
+            else
+            {
+                foundNodeAt->flag = 'e';
+            }
+            foundNodeAt->depth = depth;
+            foundNodeAt->value = val;
         }
     }
     free(posMoves.ptr);
@@ -1785,7 +1448,6 @@ Possiblemove bestMove;
 int negaMax(int depth, int alpha, int beta, int color)
 {
 
-    numNodes++;
     long long boardID = hash(&board);
     double alphaOrig = alpha;
 
@@ -1819,11 +1481,10 @@ int negaMax(int depth, int alpha, int beta, int color)
             return (foundNodeAt->value);
         }
     }
-    if (depth == 0 || checkKing() < 2)
+    if (depth <= 0 || checkKing() < 2)
     {
-        return Quiesce(13, alpha, beta, color);
+        return Quiesce(5, alpha, beta, color);
     }
-    initBoardHashMap();
     Array posMoves;
     initArr(&posMoves, 40);
     getPossibleMoves(&posMoves, color);
@@ -1836,6 +1497,7 @@ int negaMax(int depth, int alpha, int beta, int color)
         initBoardHashMap();
         movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
 
+        initBoardHashMap();
         int value = -negaMax(depth - 1, -beta, -alpha, -color);
         //double value = -negaMax(depth - 1, -beta, -alpha, -color);
         if (value > val)
@@ -1845,8 +1507,8 @@ int negaMax(int depth, int alpha, int beta, int color)
             val = value;
         }
         alpha = max(val, alpha);
-        int isPV = takeBack();
-        if ( isPV!= 1 && alpha > beta)
+
+        if (takeBack() != 1 && alpha > beta)
         {
             butterfly[(posMoves.ptr + (sortedArr + i)->index1)->posx][(posMoves.ptr + (sortedArr + i)->index1)->posy][(posMoves.ptr + (sortedArr + i)->index1)->targetx][(posMoves.ptr + (sortedArr + i)->index1)->targety] += depth * depth;
         }
@@ -1856,13 +1518,6 @@ int negaMax(int depth, int alpha, int beta, int color)
             break;
         }
         b = alpha + 1;
-        if (timeEnd <= time(NULL))
-        {
-
-            free(posMoves.ptr);
-            free(sortedArr);
-            return val;
-        }
     }
 
     if (foundNodeAt == NULL)
@@ -1886,9 +1541,7 @@ int negaMax(int depth, int alpha, int beta, int color)
             ttAble = insert(ttAble, (nodeValue){val, boardID, depth, flag}, &localBestMove);
         }
         else
-        {
             ttAble2 = insert(ttAble2, (nodeValue){val, boardID, depth, flag}, &localBestMove);
-        }
     }
     else
     {
@@ -1919,9 +1572,10 @@ int negaMax(int depth, int alpha, int beta, int color)
 int globalval = -1000000;
 double negaMax1(int depth, int alpha, int beta, int color)
 {
-    numNodes++;
+
     long long boardID = hash(&board);
     double alphaOrig = alpha;
+
     Possiblemove localBestMove;
     struct Node *foundNodeAt;
     if (color == 1)
@@ -1952,25 +1606,24 @@ double negaMax1(int depth, int alpha, int beta, int color)
             beta = min(beta, (foundNodeAt->value));
         }
     }
-
-    if (depth == 0 || checkKing() < 2)
+    if (depth <= 0 || checkKing() < 2)
     {
-        return Quiesce(13, alpha, beta, color);
+        return Quiesce(5, alpha, beta, color);
     }
-    initBoardHashMap();
-
     int val = -10000000;
     Array posMoves;
     initArr(&posMoves, 40);
     getPossibleMoves(&posMoves, color);
     indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
     customHeuristic(&posMoves, sortedArr);
+    int b;
     for (int i = 0; i < posMoves.size; i++)
     {
 
         initBoardHashMap();
         movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
 
+        initBoardHashMap();
         int value = -negaMax(depth - 1, -beta, -alpha, -color);
         //double value = -negaMax(depth - 1, -beta, -alpha, -color);
         if (value > globalval)
@@ -1991,13 +1644,7 @@ double negaMax1(int depth, int alpha, int beta, int color)
 
             break;
         }
-        if (timeEnd <= time(NULL))
-        {
-
-            free(posMoves.ptr);
-            free(sortedArr);
-            return val;
-        }
+        b = alpha + 1;
     }
     if (depth > 2)
         if (foundNodeAt == NULL)
@@ -2018,12 +1665,10 @@ double negaMax1(int depth, int alpha, int beta, int color)
 
             if (color == 1)
             {
-                ttAble = insert(ttAble, (nodeValue){val, boardID, depth, flag}, &bestMove);
+                ttAble = insert(ttAble, (nodeValue){val, boardID, depth, flag}, &localBestMove);
             }
             else
-            {
-                ttAble2 = insert(ttAble2, (nodeValue){val, boardID, depth, flag}, &bestMove);
-            }
+                ttAble2 = insert(ttAble2, (nodeValue){val, boardID, depth, flag}, &localBestMove);
         }
         else
         {
@@ -2050,67 +1695,15 @@ double negaMax1(int depth, int alpha, int beta, int color)
     free(sortedArr);
     return val;
 }
-int nextGuess(int alpha, int beta, int subtreeCount)
-{
-    return alpha + (beta - alpha) * (subtreeCount - 1) / subtreeCount;
-}
-int bns(int alpha, int beta, int depth, int color)
-{
-
-    initBoardHashMap();
-    Array posMoves;
-    initArr(&posMoves, 40);
-    getPossibleMoves(&posMoves, color);
-    indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
-    customHeuristic(&posMoves, sortedArr);
-    int subtreeCount = posMoves.size;
-
-    int betterCount = 0;
-    do
-    {
-        int test = nextGuess(alpha, beta, subtreeCount);
-        betterCount = 0;
-        for (int i = 0; i < posMoves.size; i++)
-        {
-
-            initBoardHashMap();
-            movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
-
-            int bestVal = -negaMax1(depth, -test, -(test - 1), -color);
-            takeBack();
-            alpha = max(bestVal, alpha);
-            beta = min(bestVal, beta);
-            if (bestVal >= test)
-            {
-                betterCount = betterCount + 1;
-                bestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
-            }
-        }
-        
-            
-        
-    } while (!(beta - alpha < 2 || betterCount == 1));
-
-}
 int mtdf(int f, int depth, int color)
 {
-
-    globalval = -1000000;
-
     int bound[2] = {-INFINITY, +INFINITY}; // lower, upper
     do
     {
-
-        if (timeEnd <= time(NULL))
-        {
-            return 0;
-        }
         int beta = f + (f == bound[0]);
         f = negaMax1(depth, beta - 1, beta, color);
-
         bound[f < beta] = f;
     } while (bound[0] < bound[1]);
-
     return f;
 }
 int iterative_deepening(time_t timet, int color)
@@ -2118,60 +1711,18 @@ int iterative_deepening(time_t timet, int color)
     time_t start = time(NULL);
     int depth = 1;
     int firstguess = 0;
-    struct Node *searchedResult;
-    Possiblemove localBestMove = bestMove;
-
-    timeEnd = start + timet;
-    if (color)
+    while (start + timet >= time(NULL))
     {
-        searchedResult = search(ttAble, hash(&board));
-    }
-    else
-    {
-        searchedResult = search(ttAble2, hash(&board));
-    }
-    if (searchedResult != NULL)
-    {
-        depth = searchedResult->depth + 1;
-        firstguess = searchedResult->value;
-        bestMove = searchedResult->move;
-        globalval = searchedResult->value;
-    }
-    else
-    {
-        firstguess = Quiesce(-1, -100000000, 1000000000, color);
-    }
-     searched = 0;
-    while (start + timet > time(NULL)||searched==0)
-    {
-        localBestMove = bestMove;
         printf("DEEPENING AT %d\n", depth);
-        
-        
-        int temp =0;
-        temp =  mtdf(firstguess, depth, color);
-        searched ++;
-       // temp= bns( -100000000, 1000000000, depth, color);;
-        if (start + timet < time(NULL))
-        {
-            
-            bestMove = localBestMove;
-            break;
-        }
-        firstguess = temp;
-
+        firstguess = mtdf(firstguess, depth, color);
         depth++;
     }
-
-    //memFree();
-    printf("Took %d seconds target Time = %d seconds \n", time(NULL) - start, timet);
     return firstguess;
 }
 // Prints out the Board in Console
 void refreshConsole(int turn)
 {
 
-    initBoardHashMap();
     //system("CLS"); // uncomment if you want it to refresh every time
     char can;
     int e = 0;
@@ -2304,10 +1855,6 @@ void copyArr(piece *target, piece *dest)
         (*(dest + i)) = (piece){(*(target + i)).posx, (*(target + i)).posy, (*(target + i)).type, (*(target + i)).team};
     }
 }
-struct Node *copyTree(struct Node *cat)
-{
-    struct Node *stuff = NULL;
-}
 int main()
 {
     srand((unsigned)time(0));
@@ -2365,7 +1912,7 @@ int main()
     // ttAble = insert(ttAble, (nodeValue){0, hash(&board), 0, 'e'}, 0);
     // prints current state of board
     refreshConsole(-1);
-    printf("%d", sizeof(struct Node));
+
     int turn = 1; // Who's turn to move. 1 for white -1 for black
     char cat[5];  // input from console
     while (1 == 1)
@@ -2384,22 +1931,8 @@ int main()
             else if (cat[1] == 'x')
                 return 0;
 
-        if (cat[0] == 'c' && cat[1] == 'l')
-        {
-            printf("clearing...");
-            destroyTree(ttAble);
-            destroyTree(ttAble2);
-            destroyTree(ttAble_PV2);
-            destroyTree(ttAble_PV);
-            ttAble = NULL;
-            ttAble2 = NULL;
-            ttAble_PV = NULL;
-            ttAble_PV2 = NULL;
-            printf("\ndone.");
-        }
-        else
-            // if user puts word bo at start then it will let the bot make it's move
-            if (cat[0] == 'p' && cat[1] == 'm')
+        // if user puts word bo at start then it will let the bot make it's move
+        if (cat[0] == 'p' && cat[1] == 'm')
         {
 
             int pickedPosX = 7 - ((int)cat[2] - 65) % 32;
@@ -2425,7 +1958,6 @@ int main()
         }
         else if (cat[0] == 'b' && cat[1] == 'o')
         {
-            numNodes = 0;
             for (int from = 0; from < 8; from++)
                 for (int to = 0; to < 8; to++)
                     for (int from1 = 0; from1 < 8; from1++)
@@ -2440,10 +1972,11 @@ int main()
             bestValue = -10000000;
             long seconds = time(NULL);
             // gets the value of the board and best move is put in the Variable bestMove
-            int val = iterative_deepening(10, turn);
-            printf("Took %ld seconds\n%lluNodes Recorded\nBest Move is %c%d  to %c%d \n ", time(0) - seconds, numNodes, ((7 - bestMove.posx) + 65), bestMove.posy + 1, (7 - bestMove.targetx) + 65, bestMove.targety + 1);
-            printf("Bot confidence : %d\n", val);
-            printf("\nEvaluation : \nMemory of movesDone : %d\nMemory of board :%d", movesDone.realSize, board.realSize);
+            double val = iterative_deepening(1, turn);
+
+            printf("Took %ld seconds\n%dNodes Recorded\nBest Move is %c%d  to %c%d \n ", time(0) - seconds, 0, ((7 - bestMove.posx) + 65), bestMove.posy + 1, (7 - bestMove.targetx) + 65, bestMove.targety + 1);
+            printf("Bot confidence : %f\n", val);
+
             Array possMoves;
             possMoves.ptr = malloc(0);
             possMoves.size = 0;
@@ -2473,6 +2006,7 @@ int main()
                 printf("\nInvalid Move Try Again\n");
 
             freeArr(&possMoves);
+            initBoardHashMap();
             refreshConsole(-turn);
         }
         else // reverses a move
@@ -2508,8 +2042,8 @@ int main()
                     }
                 }
 
-                if (i < possMoves.size) // this works because the for loop breaks only when i is greater than the list of possible moves
-                {                       // if  the move is specified by the Human and is in the list of possible moves
+                if (i < possMoves.size)
+                { // if  the move is specified by the Human and is in the list of possible moves
 
                     movePiece(canMove, 7 - (((int)cat[2] - 65) % 32), (int)cat[3] - 49);
 

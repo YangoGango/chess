@@ -10,7 +10,6 @@ long nodesProcessed = 0;
 unsigned int butterfly_PV[8][8][8][8];
 long long whiteornot;
 long long numNodes = 0;
-int searched=0;
 int bobby = 0;
 int targetedDepth = 5; // Looks this move or even more ahead
 int expandedDepth = 6; // Looks this moves ahead after the intial depth but is more select
@@ -25,6 +24,7 @@ double _knight_Value = 320;
 double _pawn_Value = 100;
 int endGameCutoff = 21500;
 int cancelSearch = 0;
+int bitBoard[8][8] = {-1};
 time_t timeEnd = 10000000000000000;
 int pawnMap[64] = {
     0, 0, 0, 0, 0, 0, 0, 0,
@@ -82,6 +82,12 @@ int kingMap[64] = {
     -10, -20, -20, -20, -20, -20, -20, -10,
     20, 20, 0, 0, 0, 0, 20, 20,
     20, 30, 10, 0, 0, 10, 30, 20};
+
+typedef struct pieceType
+{
+    char type;
+    int team;
+} pieceType;
 
 typedef struct Possiblemove
 {
@@ -798,7 +804,7 @@ void movePiece(int location, int x, int y)
     int i = getPieceAtPosHash(x, y);
 
     boardHashMap[(board.ptr + location)->posx][(board.ptr + location)->posy] = -1;
-    
+
     move temp;
     // if it found something in the loop above (a piece in the x and y cords)
     if (i != -1)
@@ -812,11 +818,45 @@ void movePiece(int location, int x, int y)
     else
     {
 
-        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, '-', '-',(board.ptr + location)->type};
+        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, '-', '-', (board.ptr + location)->type};
         (board.ptr + location)->posx = x;
         (board.ptr + location)->posy = y;
     }
-   
+    if ((y == 0 || y == 7) && ((board.ptr + location)->type == 'p'))
+    {
+        (board.ptr + location)->type = 'q';
+    }
+    boardHashMap[x][y] = location;
+    //Adds move to movelist
+    addArrList(&movesDone, temp);
+}
+void movePiece(int node[8][8],int x1,int x2, int x, int y)
+{
+    int i = getPieceAtPosHash(x, y);
+
+    boardHashMap[(board.ptr + location)->posx][(board.ptr + location)->posy] = -1;
+
+    move temp;
+    // if it found something in the loop above (a piece in the x and y cords)
+    if (i != -1)
+    {
+        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, (board.ptr + i)->type, (board.ptr + i)->team, (board.ptr + location)->type};
+
+        (board.ptr + location)->posx = x;
+        (board.ptr + location)->posy = y;
+        removeArr1(&board, i);
+    }
+    else
+    {
+
+        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, '-', '-', (board.ptr + location)->type};
+        (board.ptr + location)->posx = x;
+        (board.ptr + location)->posy = y;
+    }
+    if ((y == 0 || y == 7) && ((board.ptr + location)->type == 'p'))
+    {
+        (board.ptr + location)->type = 'q';
+    }
     boardHashMap[x][y] = location;
     //Adds move to movelist
     addArrList(&movesDone, temp);
@@ -835,11 +875,11 @@ int takeBack()
 {
     if (movesDone.size > 0)
     {
-            initBoardHashMap();
+        initBoardHashMap();
         move *lookat = (((movesDone.ptr + movesDone.size - 1)));
 
         int canMove = getPieceAtPos(lookat->targetx, lookat->targety);
-        //(board.ptr + canMove)->type= lookat->takingpiece;
+        (board.ptr + canMove)->type = lookat->takingpiece;
         //move the piece back
         movePieceFast(canMove, lookat->posx, lookat->posy);
         //if there was a piece where there were add it back
@@ -1091,6 +1131,80 @@ long long getPieceID(piece *obj)
     }
     return -1;
 }
+long long getPieceID1(char type, char team)
+{
+    int val = 0;
+    switch (type)
+    {
+    case 'k':
+        val = 0;
+        if (team != 'w')
+            val += 6;
+        return val;
+    case 'q':
+
+        val = 1;
+        if (team != 'w')
+            val += 6;
+        return val;
+    case 'r':
+
+        val = 2;
+        if (team != 'w')
+            val += 6;
+        return val;
+    case 'b':
+
+        val = 3;
+        if (team != 'w')
+            val += 6;
+        return val;
+    case 'h':
+
+        val = 4;
+        if (team != 'w')
+            val += 6;
+        return val;
+    case 'p':
+
+        val = 5;
+        if (team != 'w')
+            val += 6;
+        return val;
+    }
+    return -1;
+}
+pieceType getPiece(int n)
+{
+    pieceType temp;
+    temp.team = 1;
+    if (n >= 6)
+    {
+        temp.team *= -1;
+    }
+    switch (n % 6)
+    {
+    case 0:
+        temp.type = 'k';
+        break;
+    case 1:
+        temp.type = 'q';
+        break;
+    case 2:
+        temp.type = 'r';
+        break;
+    case 3:
+        temp.type = 'b';
+        break;
+    case 4:
+        temp.type = 'h';
+        break;
+    case 5:
+        temp.type = 'p';
+        break;
+    }
+    return temp;
+}
 long long table[8][8][12];
 long long table2[8][8][12];
 void init_zobrist()
@@ -1123,6 +1237,146 @@ long long hash(ArrayP *pieceMap)
     }
     return h;
 }
+void getPossibleMovesBit(Array *output, int color, int bit[8][8])
+{ // Adds all possible moves to output array
+    for (int e = 0; e < 8; e++)
+        for (int i = 0; i < 8; i++)
+        { // iterates through all pieces on board
+            if (bit[e][i] != -1)
+            {
+                pieceType info = getPiece(bit[e][i]); // selected piece
+                int offset = 1;
+                int done = 1;
+                if ((info.team == 'w' && color == 1) || (info.team == 'b' && color == -1))
+                { // if the piece selected is a certain color
+                    switch (info.type)
+                    {
+                    case 'k':
+                        addNCheck(output, (Possiblemove){e, i, e, i + 1}, color);
+                        addNCheck(output, (Possiblemove){e, i, e, i - 1}, color);
+                        addNCheck(output, (Possiblemove){e, i, e + 1, i + 1}, color);
+                        addNCheck(output, (Possiblemove){e, i, e + 1, i - 1}, color);
+                        addNCheck(output, (Possiblemove){e, i, e + 1, i}, color);
+                        addNCheck(output, (Possiblemove){e, i, e - 1, i + 1}, color);
+                        addNCheck(output, (Possiblemove){e, i, e - 1, i}, color);
+                        addNCheck(output, (Possiblemove){e, i, e - 1, i - 1}, color);
+                        break;
+                    case 'q':
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e + offset, i}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e - offset, i}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e, i + offset}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e, i - offset}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e + offset, i + offset}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e - offset, i + offset}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e + offset, i - offset}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e - offset, i - offset}, color) != 1)
+                                break;
+                        }
+                        break;
+                    case 'r':
+
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e + offset, i}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e - offset, i}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e, i + offset}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e, i - offset}, color) != 1)
+                                break;
+                        }
+                        break;
+                    case 'b':
+
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e + offset, i + offset}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e - offset, i + offset}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e + offset, i - offset}, color) != 1)
+                                break;
+                        }
+                        for (offset = 1; offset < 8; offset++)
+                        {
+                            if (addNCheck(output, (Possiblemove){e, i, e - offset, i - offset}, color) != 1)
+                                break;
+                        }
+                        break;
+                    case 'h':
+
+                        addNCheck(output, (Possiblemove){e, i, e + 2, i + 1}, color);
+                        addNCheck(output, (Possiblemove){e, i, e + 2, i - 1}, color);
+                        addNCheck(output, (Possiblemove){e, i, e + 1, i + 2}, color);
+                        addNCheck(output, (Possiblemove){e, i, e + 1, i - 2}, color);
+                        addNCheck(output, (Possiblemove){e, i, e - 2, i + 1}, color);
+                        addNCheck(output, (Possiblemove){e, i, e - 2, i - 1}, color);
+                        addNCheck(output, (Possiblemove){e, i, e - 1, i + 2}, color);
+                        addNCheck(output, (Possiblemove){e, i, e - 1, i - 2}, color);
+                        break;
+                    case 'p':
+                        if (getPieceAtPosHash(e + 1, i + 1 * color) >= 0)
+                            addNCheck(output, (Possiblemove){e, i, e + 1, i + 1 * color}, color);
+                        if (getPieceAtPosHash(e - 1, i + 1 * color) >= 0)
+                            addNCheck(output, (Possiblemove){e, i, e - 1, i + 1 * color}, color);
+                        if (
+                            addNCheckCannotTake(output, (Possiblemove){e, i, e, i + 1 * color}, color) == 1 && ((i == 1 && color == 1) || (i == 6 && color == -1)))
+                            addNCheckCannotTake(output, (Possiblemove){e, i, e, i + 2 * color}, color);
+                        break;
+                    default:
+                        printf("An Error Has Occured Type '%c' not reconized", info.type);
+                    }
+                }
+            }
+        }
+}
+
 void getPossibleMoves(Array *output, int color)
 { // Adds all possible moves to output array
     for (int i = 0; i < board.size; i++)
@@ -1564,7 +1818,6 @@ double eval(ArrayP *board)
     double pieceScore = 0;
     double mobilityScore = 0;
     mobilityScore = getNumPossibleMoves(1) - getNumPossibleMoves(-1);
-    //printf("%f \n",mobilityScore);
     double whiteMaterialScore = 0;
     double blackMaterialScore = 0;
     for (int i = 0; i < board->size; i++)
@@ -1586,7 +1839,7 @@ double eval(ArrayP *board)
     }
     else
         gameState = 2;
-    return pieceScore  + 2*mobilityScore;
+    return pieceScore * 4 + mobilityScore;
 }
 double Quiesce(int depth, double alpha, double beta, int color)
 {
@@ -1821,7 +2074,7 @@ int negaMax(int depth, int alpha, int beta, int color)
     }
     if (depth == 0 || checkKing() < 2)
     {
-        return Quiesce(13, alpha, beta, color);
+        return Quiesce(7, alpha, beta, color);
     }
     initBoardHashMap();
     Array posMoves;
@@ -1846,7 +2099,7 @@ int negaMax(int depth, int alpha, int beta, int color)
         }
         alpha = max(val, alpha);
         int isPV = takeBack();
-        if ( isPV!= 1 && alpha > beta)
+        if (isPV != 1 && alpha > beta)
         {
             butterfly[(posMoves.ptr + (sortedArr + i)->index1)->posx][(posMoves.ptr + (sortedArr + i)->index1)->posy][(posMoves.ptr + (sortedArr + i)->index1)->targetx][(posMoves.ptr + (sortedArr + i)->index1)->targety] += depth * depth;
         }
@@ -1856,7 +2109,7 @@ int negaMax(int depth, int alpha, int beta, int color)
             break;
         }
         b = alpha + 1;
-        if (timeEnd <= time(NULL))
+        if (timeEnd < time(NULL))
         {
 
             free(posMoves.ptr);
@@ -1955,7 +2208,7 @@ double negaMax1(int depth, int alpha, int beta, int color)
 
     if (depth == 0 || checkKing() < 2)
     {
-        return Quiesce(13, alpha, beta, color);
+        return Quiesce(7, alpha, beta, color);
     }
     initBoardHashMap();
 
@@ -1991,7 +2244,7 @@ double negaMax1(int depth, int alpha, int beta, int color)
 
             break;
         }
-        if (timeEnd <= time(NULL))
+        if (timeEnd < time(NULL))
         {
 
             free(posMoves.ptr);
@@ -2086,11 +2339,8 @@ int bns(int alpha, int beta, int depth, int color)
                 bestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
             }
         }
-        
-            
-        
-    } while (!(beta - alpha < 2 || betterCount == 1));
 
+    } while (!(beta - alpha < 2 || betterCount == 1));
 }
 int mtdf(int f, int depth, int color)
 {
@@ -2101,7 +2351,7 @@ int mtdf(int f, int depth, int color)
     do
     {
 
-        if (timeEnd <= time(NULL))
+        if (timeEnd < time(NULL))
         {
             return 0;
         }
@@ -2141,20 +2391,19 @@ int iterative_deepening(time_t timet, int color)
     {
         firstguess = Quiesce(-1, -100000000, 1000000000, color);
     }
-     searched = 0;
-    while (start + timet > time(NULL)||searched==0)
+    int searched = 0;
+    while (start + timet >= time(NULL))
     {
         localBestMove = bestMove;
         printf("DEEPENING AT %d\n", depth);
-        
-        
-        int temp =0;
-        temp =  mtdf(firstguess, depth, color);
-        searched ++;
-       // temp= bns( -100000000, 1000000000, depth, color);;
+
+        int temp = 0;
+        //temp =  mtdf(firstguess, depth, color);
+
+        temp = bns(-100000000, 1000000000, depth, color);
+        ;
         if (start + timet < time(NULL))
         {
-            
             bestMove = localBestMove;
             break;
         }
@@ -2361,6 +2610,13 @@ int main()
     (*(board.ptr + 16)) = (piece){
         7, 7, 'r', 'b'};
 
+    for (int i = 0; i < 8; i++)
+    {
+        for (int e = 0; e < 8; e++)
+            bitBoard[e][i] = -1;
+    }
+    for (int i = 0; i < board.size; i++)
+        bitBoard[board.ptr[i].posx][board.ptr[i].posy] = getPieceID1(board.ptr[i].type, board.ptr[i].team);
     initBoardHashMap();
     // ttAble = insert(ttAble, (nodeValue){0, hash(&board), 0, 'e'}, 0);
     // prints current state of board
@@ -2440,9 +2696,9 @@ int main()
             bestValue = -10000000;
             long seconds = time(NULL);
             // gets the value of the board and best move is put in the Variable bestMove
-            int val = iterative_deepening(10, turn);
+            double val = iterative_deepening(10, turn);
             printf("Took %ld seconds\n%lluNodes Recorded\nBest Move is %c%d  to %c%d \n ", time(0) - seconds, numNodes, ((7 - bestMove.posx) + 65), bestMove.posy + 1, (7 - bestMove.targetx) + 65, bestMove.targety + 1);
-            printf("Bot confidence : %d\n", val);
+            printf("Bot confidence : %f\n", val);
             printf("\nEvaluation : \nMemory of movesDone : %d\nMemory of board :%d", movesDone.realSize, board.realSize);
             Array possMoves;
             possMoves.ptr = malloc(0);
