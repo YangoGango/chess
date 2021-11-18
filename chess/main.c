@@ -4,16 +4,28 @@
 #include <limits.h>
 #include <math.h>
 #include <time.h>
+const int ONE_MB = 1048576;
 unsigned int butterfly[8][8][8][8];
-long nodesProcessed=0;
+long nodesProcessed = 0;
 unsigned int butterfly_PV[8][8][8][8];
 long long whiteornot;
-long numNodes = 0;
+long long numNodes = 0;
+int searched=0;
 int bobby = 0;
 int targetedDepth = 5; // Looks this move or even more ahead
-int expandedDepth = 6;// Looks this moves ahead after the intial depth but is more select
+int expandedDepth = 6; // Looks this moves ahead after the intial depth but is more select
 int unwantedDepth = 2; // Anything moves equal or under than this is considered not worth it to store
 // Score Maps for scoring
+int gameState = 1; // 1: Opening 2: Midgame 3: Endgame
+double _king_Value = 20000;
+double _queen_Value = 900;
+double _rook_Value = 500;
+double _bishop_Value = 330;
+double _knight_Value = 320;
+double _pawn_Value = 100;
+int endGameCutoff = 21500;
+int cancelSearch = 0;
+time_t timeEnd = 10000000000000000;
 int pawnMap[64] = {
     0, 0, 0, 0, 0, 0, 0, 0,
     50, 50, 50, 50, 50, 50, 50, 50,
@@ -71,6 +83,16 @@ int kingMap[64] = {
     20, 20, 0, 0, 0, 0, 20, 20,
     20, 30, 10, 0, 0, 10, 30, 20};
 
+typedef struct Possiblemove
+{
+    short posx;
+    short posy;
+    short targetx;
+    short targety;
+    char type;
+
+} Possiblemove;
+//Value node depth flag
 typedef struct nodeValue
 {
     int value;
@@ -80,16 +102,24 @@ typedef struct nodeValue
 } nodeValue;
 struct Node
 {
-  long long key;
-  int value;
-  int depth;
-  char flag;
+    long long key;
+    int value;
+    short depth;
+    int age;
+
+    int timesSearched;
+    char flag;
     struct Node *left;
     struct Node *right;
-    int height;
+    Possiblemove move;
+    unsigned short height;
 };
- 
- 
+struct memoryList
+{
+    struct Node *data;
+    struct memoryList *next;
+};
+
 // A utility function to get the height of the tree
 int height(struct Node *N)
 {
@@ -97,85 +127,93 @@ int height(struct Node *N)
         return 0;
     return N->height;
 }
- 
+
 int Max(int a, int b)
 {
-    return (a > b)? a : b;
+    return (a > b) ? a : b;
 }
- 
+
 /* Helper function that allocates a new node with the given key and
     NULL left and right pointers. */
-struct Node* newNode(nodeValue key)
+struct Node *newNode(nodeValue key, Possiblemove *move)
 {
-    struct Node* node = (struct Node*)
-                        malloc(sizeof(struct Node));
+    struct Node *node = malloc(sizeof(struct Node));
     node->key = key.node;
     node->value = key.value;
     node->depth = key.depth;
     node->flag = key.flag;
+    node->move = *move;
     node->left = NULL;
     node->right = NULL;
-    node->left   = NULL;
-    node->right  = NULL;
-    node->height = 1;  // new node is initially added at leaf
-    return(node);
+    node->age = node->depth * 4;
+    node->timesSearched = node->depth * 4;
+    node->left = NULL;
+    node->right = NULL;
+    node->height = 1; // new node is initially added at leaf
+    return (node);
 }
- 
+
 // A utility function to right rotate subtree rooted with y
 // See the diagram given above.
 struct Node *rightRotate(struct Node *y)
 {
     struct Node *x = y->left;
     struct Node *T2 = x->right;
- 
+
     // Perform rotation
     x->right = y;
     y->left = T2;
- 
+
     // Update heights
-    y->height = Max(height(y->left), height(y->right))+1;
-    x->height = Max(height(x->left), height(x->right))+1;
- 
+    y->height = Max(height(y->left), height(y->right)) + 1;
+    x->height = Max(height(x->left), height(x->right)) + 1;
+
     // Return new root
     return x;
 }
- 
+
 // A utility function to left rotate subtree rooted with x
 // See the diagram given above.
 struct Node *leftRotate(struct Node *x)
 {
     struct Node *y = x->right;
     struct Node *T2 = y->left;
- 
+
     // Perform rotation
     y->left = x;
     x->right = T2;
- 
+
     //  Update heights
-    x->height = Max(height(x->left), height(x->right))+1;
-    y->height = Max(height(y->left), height(y->right))+1;
- 
+    x->height = Max(height(x->left), height(x->right)) + 1;
+    y->height = Max(height(y->left), height(y->right)) + 1;
+
     // Return new root
     return y;
 }
- 
+
 struct Node *search(struct Node *root, long long x)
 {
-
-    if (root == NULL || (root->key) == x) //if root->data is x then the element is found
+    if (root == NULL) //if root->data is x then the element is found
         return root;
-    else if (x > root->key) // x is greater, so we will search the right subtree
+    root->timesSearched++;
+    if ((root->key) == x)
+    {
+        root->age++;
+        return root;
+    }
+
+    if (x > root->key) // x is greater, so we will search the right subtree
         return search(root->right, x);
     else //x is smaller than the data, so we will search the left subtree
         return search(root->left, x);
 }
-
-int getHeight(struct Node *left){
-    if(left->left ==NULL){
+int getHeight(struct Node *left)
+{
+    if (left->left == NULL)
+    {
         return left->height;
     }
     getHeight(left->left);
-    
 }
 // Get Balance factor of node N
 int getBalance(struct Node *N)
@@ -184,94 +222,334 @@ int getBalance(struct Node *N)
         return 0;
     return height(N->left) - height(N->right);
 }
- 
+
 // Recursive function to insert a key in the subtree rooted
 // with node and returns the new root of the subtree.
-struct Node* insert(struct Node* node, nodeValue key)
+struct Node *insert(struct Node *node, nodeValue key, Possiblemove *move)
 {
     /* 1.  Perform the normal BST insertion */
     if (node == NULL)
-        return(newNode(key));
-    if (node->key == key.node && node->depth < key.depth)
+        return (newNode(key, move));
+    if (node->key == key.node && node->depth <= key.depth)
     {
         node->depth = key.depth;
         node->value = key.value;
         node->flag = key.flag;
+        node->move = *move;
         return node;
     }
-    if (key.node< node->key)
-        node->left  = insert(node->left, key);
+    if (key.node < node->key)
+        node->left = insert(node->left, key, move);
     else if (key.node > node->key)
-        node->right = insert(node->right, key);
+        node->right = insert(node->right, key, move);
     else // Equal keys are not allowed in BST
         return node;
- 
+
     /* 2. Update height of this ancestor node */
     node->height = 1 + Max(height(node->left),
                            height(node->right));
- 
+
     /* 3. Get the balance factor of this ancestor
           node to check whether this node became
           unbalanced */
     int balance = getBalance(node);
- 
+
     // If this node becomes unbalanced, then
     // there are 4 cases
- 
+
     // Left Left Case
     if (balance > 1 && key.node < node->left->key)
         return rightRotate(node);
- 
+
     // Right Right Case
     if (balance < -1 && key.node > node->right->key)
         return leftRotate(node);
- 
+
     // Left Right Case
     if (balance > 1 && key.node > node->left->key)
     {
-        node->left =  leftRotate(node->left);
+        node->left = leftRotate(node->left);
         return rightRotate(node);
     }
- 
+
     // Right Left Case
     if (balance < -1 && key.node < node->right->key)
     {
         node->right = rightRotate(node->right);
         return leftRotate(node);
     }
- 
+
     /* return the (unchanged) node pointer */
     return node;
 }
- 
+struct Node *minValueNode(struct Node *node)
+{
+    struct Node *current = node;
+
+    /* loop down to find the leftmost leaf */
+    while (current->left != NULL)
+        current = current->left;
+
+    return current;
+}
+
+// Recursive function to delete a node with given key
+// from subtree with given root. It returns root of
+// the modified subtree.
+
+struct Node *deleteNode(struct Node *root, int key)
+{
+    // STEP 1: PERFORM STANDARD BST DELETE
+
+    if (root == NULL)
+        return root;
+
+    // If the key to be deleted is smaller than the
+    // root's key, then it lies in left subtree
+    if (key < root->key)
+        root->left = deleteNode(root->left, key);
+
+    // If the key to be deleted is greater than the
+    // root's key, then it lies in right subtree
+    else if (key > root->key)
+        root->right = deleteNode(root->right, key);
+
+    // if key is same as root's key, then This is
+    // the node to be deleted
+    else
+    {
+        // node with only one child or no child
+        if ((root->left == NULL) || (root->right == NULL))
+        {
+            struct Node *temp = root->left ? root->left : root->right;
+
+            // No child case
+            if (temp == NULL)
+            {
+                temp = root;
+                root = NULL;
+            }
+            else               // One child case
+                *root = *temp; // Copy the contents of
+                               // the non-empty child
+            free(temp);
+        }
+        else
+        {
+            // node with two children: Get the inorder
+            // successor (smallest in the right subtree)
+            struct Node *temp = minValueNode(root->right);
+
+            // Copy the inorder successor's data to this node
+            root->key = temp->key;
+            root->value = temp->value;
+            root->depth = temp->depth;
+            root->flag = temp->flag;
+            root->move = temp->move;
+            root->age = temp->age;
+            root->timesSearched = temp->timesSearched;
+            // Delete the inorder successor
+            root->right = deleteNode(root->right, root->right->key);
+        }
+    }
+
+    // If the tree had only one node then return
+    if (root == NULL)
+        return root;
+
+    // STEP 2: UPDATE HEIGHT OF THE CURRENT NODE
+    root->height = 1 + max(height(root->left),
+                           height(root->right));
+
+    // STEP 3: GET THE BALANCE FACTOR OF THIS NODE (to
+    // check whether this node became unbalanced)
+    int balance = getBalance(root);
+
+    // If this node becomes unbalanced, then there are 4 cases
+
+    // Left Left Case
+    if (balance > 1 && getBalance(root->left) >= 0)
+        return rightRotate(root);
+
+    // Left Right Case
+    if (balance > 1 && getBalance(root->left) < 0)
+    {
+        root->left = leftRotate(root->left);
+        return rightRotate(root);
+    }
+
+    // Right Right Case
+    if (balance < -1 && getBalance(root->right) <= 0)
+        return leftRotate(root);
+
+    // Right Left Case
+    if (balance < -1 && getBalance(root->right) > 0)
+    {
+        root->right = rightRotate(root->right);
+        return leftRotate(root);
+    }
+
+    return root;
+}
+struct Node *deleteNodeCut(struct Node *root)
+{
+    // STEP 1: PERFORM STANDARD BST DELETE
+
+    if (root == NULL)
+        return root;
+    // if it makes the cut don't delete
+    // node with only one child or no child
+    if ((root->left == NULL) || (root->right == NULL))
+    {
+        struct Node *temp = root->left ? root->left : root->right;
+
+        // No child case
+        if (temp == NULL)
+        {
+            temp = root;
+            root = NULL;
+        }
+        else               // One child case
+            *root = *temp; // Copy the contents of
+                           // the non-empty child
+        free(temp);
+    }
+    else
+    {
+        // node with two children: Get the inorder
+        // successor (smallest in the right subtree)
+        struct Node *temp = minValueNode(root->right);
+
+        // Copy the inorder successor's data to this node
+        root->key = temp->key;
+        root->value = temp->value;
+        root->depth = temp->depth;
+        root->flag = temp->flag;
+        root->move = temp->move;
+        root->age = temp->age;
+
+        root->timesSearched = temp->timesSearched;
+        // Delete the inorder successor
+        root->right = deleteNode(root->right, root->right->key);
+    }
+
+    // If the tree had only one node then return
+    if (root == NULL)
+        return root;
+
+    // STEP 2: UPDATE HEIGHT OF THE CURRENT NODE
+    root->height = 1 + max(height(root->left),
+                           height(root->right));
+
+    // STEP 3: GET THE BALANCE FACTOR OF THIS NODE (to
+    // check whether this node became unbalanced)
+    int balance = getBalance(root);
+
+    // If this node becomes unbalanced, then there are 4 cases
+
+    // Left Left Case
+    if (balance > 1 && getBalance(root->left) >= 0)
+        return rightRotate(root);
+
+    // Left Right Case
+    if (balance > 1 && getBalance(root->left) < 0)
+    {
+        root->left = leftRotate(root->left);
+        return rightRotate(root);
+    }
+
+    // Right Right Case
+    if (balance < -1 && getBalance(root->right) <= 0)
+        return leftRotate(root);
+
+    // Right Left Case
+    if (balance < -1 && getBalance(root->right) > 0)
+    {
+        root->right = rightRotate(root->right);
+        return leftRotate(root);
+    }
+
+    return root;
+}
+struct Node *deleteCurrentNode(struct Node *root, int key)
+{
+}
+double totalAge = 0;
+double totalDepth = 0;
+double numOfNodes = 0;
+double counterOfNodes = 0;
+double memoryCutOff = 200 * 1048576;
+void count(struct Node *root)
+{
+
+    if (root == NULL) //if root->data is x then the element is found
+        return;
+
+    counterOfNodes++;
+    count(root->right);
+    count(root->left);
+    totalAge += root->age;
+    totalDepth += root->depth;
+    numOfNodes += root->timesSearched;
+}
+
+void clearTree(struct Node *rootRoot, struct Node *root, double agecutoff)
+{
+
+    if (root == NULL) //if root->data is x then the element is found
+        return;
+    clearTree(root, root->right, agecutoff);
+    clearTree(root, root->left, agecutoff);
+    if (rootRoot != NULL && (root->timesSearched == 0 || root->age / root->timesSearched < agecutoff))
+    {
+        deleteNode(rootRoot, root->key);
+    }
+}
+
+void destroyTree(struct Node *root)
+{
+
+    if (root == NULL) //if root->data is x then the element is found
+        return;
+
+    destroyTree(root->right);
+    destroyTree(root->left);
+    free(root);
+}
+// A utility function to print preorder traversal of
+// the tree.
+// The function also prints height of every node
+
 // A utility function to print preorder traversal
 // of the tree.
 // The function also prints height of every node
-void preOrder(struct Node *root)
+void preOrder(struct Node *root, unsigned long long *output)
 {
-    if(root != NULL)
+    if (root != NULL)
     {
-        printf("%d ", root->key);
-        preOrder(root->left);
-        preOrder(root->right);
+        *output++;
+        preOrder(root->left, output);
+        preOrder(root->right, output);
     }
-}void refreshNodes(struct Node *root)
+}
+void refreshNodes(struct Node *root, int canDelete)
 {
-    if(root != NULL)
+    if (root != NULL)
     {
-        
-        refreshNodes(root->left);
-        refreshNodes(root->right);
+
+        refreshNodes(root->left, 1);
+        refreshNodes(root->right, 1);
+        root->left = NULL;
+        root->right = NULL;
         free(root);
-        
     }
 }
 
 typedef struct NodeArray
-{                   // 12 bytes total not including where the pointers point to
-    nodeValue *ptr; // 8 bytes
-    int size;       //4 bytes
-    int realSize;   // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
+{                          // 12 bytes total not including where the pointers point to
+    nodeValue *ptr;        // 8 bytes
+    unsigned int size;     //4 bytes
+    unsigned int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
     // the variable above is not really needed
 } NodeArray;
 //converts x and y cords to indexes and gets the positional score from a array of 64 from one of them above
@@ -288,12 +566,6 @@ int getPoints(int map[64], int x, int y, int reversed)
     return 0;
 }
 // score given per piece
-double _king_Value = 20000;
-double _queen_Value = 900;
-double _rook_Value = 500;
-double _bishop_Value = 330;
-double _knight_Value = 320;
-double _pawn_Value = 100;
 
 // Objects
 typedef struct piece
@@ -303,6 +575,9 @@ typedef struct piece
     char type;
     char team;
 } piece;
+
+int boardHashMap[8][8];
+
 typedef struct move
 {
     int posx;
@@ -311,41 +586,45 @@ typedef struct move
     int targety;
     char type;
     char team;
+    char takingpiece;
 } move;
-typedef struct Possiblemove
-{
-    int posx;
-    int posy;
-    int targetx;
-    int targety;
-
-} Possiblemove;
 int bestValue = -1000000000;
 //List Objects / ArrayList
 int NodeValueSizesize = sizeof(nodeValue);
 typedef struct movesList
 { // List of Moves Meant to keep track of the History of what moves were done
     move *ptr;
-    int size;     //Desired Size
-    int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
+    unsigned int size;     //Desired Size
+    unsigned int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
 } movesList;
 typedef struct Array
-{                      // 12 bytes total not including where the pointers point to
-    Possiblemove *ptr; // 8 bytes
-    int size;          //4 bytes
-    int realSize;      // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
+{                          // 12 bytes total not including where the pointers point to
+    Possiblemove *ptr;     // 8 bytes
+    unsigned int size;     //4 bytes
+    unsigned int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
     // the variable above is not really needed
 } Array;
 
 typedef struct ArrayP
-{                 // Board Object / Array of Pieces
-    piece *ptr;   // 8 bytes
-    int size;     //4 bytes
-    int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
+{                          // Board Object / Array of Pieces
+    piece *ptr;            // 8 bytes
+    unsigned int size;     //4 bytes
+    unsigned int realSize; // Real Size of Array in Memory  RealSize =  Pointersize / sizeOf(object)
 } ArrayP;
 
 ArrayP board;        // Array of Pieces on the Board
 movesList movesDone; // List of moves Done
+
+void initBoardHashMap()
+{
+    for (int i = 0; i < 8; i++)
+    {
+        for (int e = 0; e < 8; e++)
+            boardHashMap[e][i] = -1;
+    }
+    for (int i = 0; i < board.size; i++)
+        boardHashMap[board.ptr[i].posx][board.ptr[i].posy] = i;
+}
 void changeSize(Array *target, int size)
 {
 
@@ -406,6 +685,8 @@ void removeArr1(ArrayP *arr, int pos)
     {
         *(arr->ptr + i) = *(arr->ptr + i + 1);
     }
+
+    initBoardHashMap();
 }
 /// <summary>
 /// Initializes a Array given the Address of an Array
@@ -423,7 +704,7 @@ void initArr1(ArrayP *arr, int size)
 /// </summary>
 /// <param name="ArrayP* array;"></param>
 /// <param name="piece obj;"></param>
-void addArr1(ArrayP *arr, piece obj)
+int addArr1(ArrayP *arr, piece obj)
 { //
     arr->size += 1;
 
@@ -431,6 +712,7 @@ void addArr1(ArrayP *arr, piece obj)
         changeSize1(arr, arr->size);
 
     *(arr->ptr + (arr->size - 1)) = obj;
+    return (arr->size - 1);
 }
 /// <summary>
 /// Get Info from position i relitive to the address and memory location
@@ -467,7 +749,7 @@ void removeFromTop(movesList *arr)
 void changeSizeList(movesList *target, int size)
 {
     if (target->size > target->realSize)
-        target->ptr = (move *)realloc((*target).ptr, size * sizeof(move));
+        target->ptr = (move *)realloc(target->ptr, size * sizeof(move));
     target->size = size;
 
     target->realSize = target->size > target->realSize ? target->size : target->realSize;
@@ -506,22 +788,22 @@ int getPieceAtPos(int x, int y)
     }
     return -1;
 }
+int getPieceAtPosHash(int x, int y)
+{
+    return boardHashMap[x][y];
+}
 // Moves a piece in the array 'board' in the specified location of the array to the x and y cordinates
 void movePiece(int location, int x, int y)
 {
-    int i = 0;
-    // checks for piece in x and y cords
-    for (i = 0; i < board.size; i++)
-    {
+    int i = getPieceAtPosHash(x, y);
 
-        if ((board.ptr + i)->posx == x && (board.ptr + i)->posy == y)
-            break;
-    }
+    boardHashMap[(board.ptr + location)->posx][(board.ptr + location)->posy] = -1;
+    
     move temp;
     // if it found something in the loop above (a piece in the x and y cords)
-    if (i < board.size)
+    if (i != -1)
     {
-        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, (board.ptr + i)->type, (board.ptr + i)->team};
+        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, (board.ptr + i)->type, (board.ptr + i)->team, (board.ptr + location)->type};
 
         (board.ptr + location)->posx = x;
         (board.ptr + location)->posy = y;
@@ -530,18 +812,22 @@ void movePiece(int location, int x, int y)
     else
     {
 
-        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, '-', '-'};
+        temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, '-', '-',(board.ptr + location)->type};
         (board.ptr + location)->posx = x;
         (board.ptr + location)->posy = y;
     }
+   
+    boardHashMap[x][y] = location;
     //Adds move to movelist
     addArrList(&movesDone, temp);
 }
-// Moves a piece in the array 'board' in the specified location of the array to the x and y cordinates NO QUESTIONS ASKED
+// Moves a piece in the array 'board' in the specified location of the array to the x and y cordinates NO CAPTURES
 void movePieceFast(int location, int x, int y)
 {
+    boardHashMap[(board.ptr + location)->posx][(board.ptr + location)->posy] = -1;
     (board.ptr + location)->posx = x;
     (board.ptr + location)->posy = y;
+    boardHashMap[x][y] = location;
 }
 
 //looks in the Array movesDone and reverses a move
@@ -549,20 +835,27 @@ int takeBack()
 {
     if (movesDone.size > 0)
     {
+            initBoardHashMap();
         move *lookat = (((movesDone.ptr + movesDone.size - 1)));
 
         int canMove = getPieceAtPos(lookat->targetx, lookat->targety);
+        //(board.ptr + canMove)->type= lookat->takingpiece;
         //move the piece back
         movePieceFast(canMove, lookat->posx, lookat->posy);
         //if there was a piece where there were add it back
         if (lookat->type != '-' && lookat->team != '-')
         {
-            addArr1(&board, (piece){lookat->targetx, lookat->targety, lookat->type, lookat->team});
+
+            boardHashMap[lookat->targetx][lookat->targety] = addArr1(&board, (piece){lookat->targetx, lookat->targety, lookat->type, lookat->team});
             movesDone.size--;
+
+            initBoardHashMap();
             return 1;
         }
         movesDone.size--;
     }
+
+    initBoardHashMap();
     return 0;
 }
 double getPieceVal(piece *obj)
@@ -591,9 +884,64 @@ double getPieceVal(piece *obj)
 
 static struct Node *ttAble;
 
-
 static struct Node *ttAble2;
 static struct Node *ttAble_PV;
+
+static struct Node *ttAble_PV2;
+
+void iterate(struct Node *root, struct Node *sum, float cutoff)
+{
+
+    if (root == NULL) //if root->data is x then the element is found
+        return;
+
+    iterate(root->right, sum, cutoff);
+    iterate(root->left, sum, cutoff);
+    if (root->timesSearched == 0 || ((float)root->age) / ((float)root->timesSearched) * (float)root->depth >= cutoff)
+        insert(sum, (nodeValue){root->value, root->key, root->depth, root->flag}, &(root->move));
+    free(root);
+}
+struct Node *copy(struct Node *root, float cutoff)
+{
+    struct Node *temp = NULL;
+    iterate(root, temp, cutoff);
+    return temp;
+}
+void memFree()
+{
+    printf("clearing\n");
+    numOfNodes = 0;
+    totalAge = 0;
+
+    totalDepth = 0;
+    counterOfNodes = 0;
+    double ratios[4] = {0, 0, 0, 0};
+    count(ttAble);
+    ratios[0] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
+    numOfNodes = 0;
+    totalAge = 0;
+    totalDepth = 0;
+    count(ttAble2);
+    ratios[1] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
+    numOfNodes = 0;
+    totalAge = 0;
+    totalDepth = 0;
+    count(ttAble_PV);
+    ratios[2] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
+    numOfNodes = 0;
+    totalAge = 0;
+    totalDepth = 0;
+    count(ttAble_PV2);
+    ratios[3] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
+    double cutOff = (memoryCutOff / (counterOfNodes * sizeof(struct Node)));
+
+    ttAble = copy(ttAble, cutOff * ratios[0]);
+    ttAble2 = copy(ttAble2, cutOff * ratios[1]);
+    ttAble_PV = copy(ttAble_PV, cutOff * ratios[2]);
+    ttAble_PV2 = copy(ttAble_PV2, cutOff * ratios[3]);
+
+    printf("done\n");
+}
 int checkKing()
 { // gets the number of kings on board
     int kings = 0;
@@ -616,7 +964,9 @@ int addNCheck(Array *output, Possiblemove obj, int color)
     if (obj.targetx >= 0 && obj.targety >= 0 && obj.targetx < 8 && obj.targety < 8)
     {
         // get the Target or -1 if there is none
-        int num = getPieceAtPos(obj.targetx, obj.targety);
+        //int num = getPieceAtPos(obj.targetx, obj.targety);
+
+        int num = boardHashMap[obj.targetx][obj.targety];
         // Checks if there is nothing there
         if (num < 0)
         {
@@ -625,10 +975,11 @@ int addNCheck(Array *output, Possiblemove obj, int color)
         }
         char team = getArr1(&board, num)->team;
 
-        if (num >= 0 && ((team == 'w' && color != 1) || (team != 'w' && color == 1)))
+        if (num >= 0)
         {
+            if (((team == 'w' && color != 1) || (team != 'w' && color == 1)))
+                addArr(output, obj);
 
-            addArr(output, obj);
             return 0;
         }
     }
@@ -640,7 +991,7 @@ int addNCheck_IFTAKE(Array *output, Possiblemove obj, int color)
     if (obj.targetx >= 0 && obj.targety >= 0 && obj.targetx < 8 && obj.targety < 8)
     {
         // get the Target or -1 if there is none
-        int num = getPieceAtPos(obj.targetx, obj.targety);
+        int num = boardHashMap[obj.targetx][obj.targety];
         // Checks if there is nothing there
         if (num < 0)
         {
@@ -664,7 +1015,7 @@ int NCheck(Possiblemove obj, int color)
     if (obj.targetx >= 0 && obj.targety >= 0 && obj.targetx < 8 && obj.targety < 8)
     {
         // get the Target or -1 if there is none
-        int num = getPieceAtPos(obj.targetx, obj.targety);
+        int num = boardHashMap[obj.targetx][obj.targety];
         // Checks if there is nothing there
         if (num < 0)
         {
@@ -686,7 +1037,7 @@ int addNCheckCannotTake(Array *output, Possiblemove obj, int color)
 
     if (obj.targetx >= 0 && obj.targety >= 0 && obj.targetx < 8 && obj.targety < 8)
     {
-        int num = getPieceAtPos(obj.targetx, obj.targety);
+        int num = boardHashMap[obj.targetx][obj.targety];
 
         if (num < 0)
         {
@@ -752,9 +1103,8 @@ void init_zobrist()
         {
             for (int j = 0; j < 12; j++)
             {
-            for (int k= 0; k< 16; k++)
-                    table[i][e][j] += (rand()%10)* pow(10,k);
-                
+                for (int k = 0; k < 16; k++)
+                    table[i][e][j] += (rand() % 10) * pow(10, k);
             }
         }
     }
@@ -775,14 +1125,13 @@ long long hash(ArrayP *pieceMap)
 }
 void getPossibleMoves(Array *output, int color)
 { // Adds all possible moves to output array
-
     for (int i = 0; i < board.size; i++)
-    {
-        piece *selPiece = getArr1(&board, i);
+    {                                         // iterates through all pieces on board
+        piece *selPiece = getArr1(&board, i); // selected piece
         int offset = 1;
         int done = 1;
         if ((selPiece->team == 'w' && color == 1) || (selPiece->team == 'b' && color == -1))
-        {
+        { // if the piece selected is a certain color
             switch (selPiece->type)
             {
             case 'k':
@@ -796,107 +1145,91 @@ void getPossibleMoves(Array *output, int color)
                 addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - 1, selPiece->posy - 1}, color);
                 break;
             case 'q':
-
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color) == 1)
-                    offset++;
-
-                done = 1;
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) != 1)
+                        break;
+                }
+                for (offset = 1; offset < 8; offset++)
+                {
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
                 break;
             case 'r':
 
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    done = addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color);
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    done = addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color);
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    done = addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color);
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    done = addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color);
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
                 break;
             case 'b':
 
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
                 break;
             case 'h':
@@ -911,9 +1244,9 @@ void getPossibleMoves(Array *output, int color)
                 addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - 1, selPiece->posy - 2}, color);
                 break;
             case 'p':
-                if (getPieceAtPos(selPiece->posx + 1, selPiece->posy + 1 * color) >= 0)
+                if (getPieceAtPosHash(selPiece->posx + 1, selPiece->posy + 1 * color) >= 0)
                     addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + 1, selPiece->posy + 1 * color}, color);
-                if (getPieceAtPos(selPiece->posx - 1, selPiece->posy + 1 * color) >= 0)
+                if (getPieceAtPosHash(selPiece->posx - 1, selPiece->posy + 1 * color) >= 0)
                     addNCheck(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - 1, selPiece->posy + 1 * color}, color);
                 if (
                     addNCheckCannotTake(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + 1 * color}, color) == 1 && ((selPiece->posy == 1 && color == 1) || (selPiece->posy == 6 && color == -1)))
@@ -928,7 +1261,6 @@ void getPossibleMoves(Array *output, int color)
 
 void getPossibleMovesPV(Array *output, int color)
 { // Adds all possible moves to output array
-    int score = 0;
     for (int i = 0; i < board.size; i++)
     {
         piece *selPiece = getArr1(&board, i);
@@ -949,107 +1281,91 @@ void getPossibleMovesPV(Array *output, int color)
                 addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - 1, selPiece->posy - 1}, color);
                 break;
             case 'q':
-
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color) == 1)
-                    offset++;
-
-                done = 1;
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) != 1)
+                        break;
+                }
+                for (offset = 1; offset < 8; offset++)
+                {
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
                 break;
             case 'r':
 
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    done = addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color);
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    done = addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color);
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    done = addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color);
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    done = addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color);
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
                 break;
             case 'b':
 
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) == 1)
+                for (offset = 1; offset < 8; offset++)
                 {
-                    offset++;
+                    if (addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
                 break;
             case 'h':
@@ -1064,8 +1380,9 @@ void getPossibleMovesPV(Array *output, int color)
                 addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - 1, selPiece->posy - 2}, color);
                 break;
             case 'p':
-                addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + 1, selPiece->posy + 1 * color}, color);
-                addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - 1, selPiece->posy + 1 * color}, color);
+
+                addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + 1, selPiece->posy + color}, color);
+                addNCheck_IFTAKE(output, (Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - 1, selPiece->posy + color}, color);
                 break;
             default:
                 printf("An Error Has Occured Type '%c' not reconized", selPiece->type);
@@ -1095,139 +1412,91 @@ int getNumPossibleMoves(int color)
                 score += min(1, NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - 1, selPiece->posy - 1}, color));
                 break;
             case 'q':
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
                 break;
             case 'r':
 
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
                 break;
             case 'b':
 
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx + offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
-                done = 1;
-                offset = 1;
-                while (done == 1)
+                for (offset = 1; offset < 8; offset++, score++)
                 {
-                    done = NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy + offset}, color);
-                    score++;
-                    offset++;
+                    if (NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - offset, selPiece->posy - offset}, color) != 1)
+                        break;
                 }
                 break;
             case 'h':
@@ -1242,9 +1511,9 @@ int getNumPossibleMoves(int color)
                 score += min(1, NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx - 1, selPiece->posy - 2}, color));
                 break;
             case 'p':
-                if (getPieceAtPos(selPiece->posx + 1, selPiece->posy + 1 * color) >= 0)
+                if (getPieceAtPosHash(selPiece->posx + 1, selPiece->posy + 1 * color) >= 0)
                     score++;
-                if (getPieceAtPos(selPiece->posx - 1, selPiece->posy + 1 * color) >= 0)
+                if (getPieceAtPosHash(selPiece->posx - 1, selPiece->posy + 1 * color) >= 0)
                     score++;
                 if (
                     NCheck((Possiblemove){selPiece->posx, selPiece->posy, selPiece->posx, selPiece->posy + 1 * color}, color) == 1)
@@ -1265,6 +1534,7 @@ typedef struct indexes
     int index1;
     int index2;
 } indexes;
+
 int compareIndexes(const void *a, const void *b)
 {
     return (((indexes *)b)->index2 - ((indexes *)a)->index2);
@@ -1293,103 +1563,176 @@ double eval(ArrayP *board)
 {
     double pieceScore = 0;
     double mobilityScore = 0;
-    //mobilityScore += getNumPossibleMoves(1) - getNumPossibleMoves(-1);
-
+    mobilityScore = getNumPossibleMoves(1) - getNumPossibleMoves(-1);
+    //printf("%f \n",mobilityScore);
+    double whiteMaterialScore = 0;
+    double blackMaterialScore = 0;
     for (int i = 0; i < board->size; i++)
     {
         if ((board->ptr + i)->team == 'w')
         {
-            pieceScore += getPieceVal((board->ptr + i));
+            whiteMaterialScore += getPieceVal((board->ptr + i));
         }
         else
         {
-            pieceScore -= getPieceVal((board->ptr + i));
+
+            blackMaterialScore += getPieceVal((board->ptr + i));
         }
     }
-    return pieceScore + mobilityScore;
+    pieceScore = whiteMaterialScore - blackMaterialScore;
+    if (whiteMaterialScore < endGameCutoff || blackMaterialScore < endGameCutoff)
+    {
+        gameState = 3;
+    }
+    else
+        gameState = 2;
+    return pieceScore  + 2*mobilityScore;
 }
 double Quiesce(int depth, double alpha, double beta, int color)
 {
-/*
-    long boardID = hash(&board);
+
+    long long boardID = hash(&board);
     double alphaOrig = alpha;
-    struct Node *foundNodeAt = search(ttAble_PV, boardID);
+
+    initBoardHashMap();
+    int stand_pat = eval(&board) * color;
+    if (stand_pat >= beta)
+        return beta;
+    if (gameState < 3 && stand_pat < alpha - 100)
+        return alpha;
+    if (alpha < stand_pat)
+        alpha = stand_pat;
+    Possiblemove localBestMove;
+    struct Node *foundNodeAt;
+    int val = -1000000;
+    if (color == 1)
+    {
+        foundNodeAt = search(ttAble_PV, boardID);
+    }
+    else
+        foundNodeAt = search(ttAble_PV2, boardID);
     if (foundNodeAt != NULL && (foundNodeAt)->depth >= depth)
     {
 
         if (foundNodeAt->flag == 'e')
         {
-            return (foundNodeAt->value) ;
+
+            return (foundNodeAt->value);
         }
         else if (foundNodeAt->flag == 'l')
         {
-            alpha = max(alpha, (foundNodeAt->value) );
+            alpha = max(alpha, (foundNodeAt->value));
         }
         else if (foundNodeAt->flag == 'u')
         {
-            beta = min(beta, (foundNodeAt->value) );
+            beta = min(beta, (foundNodeAt->value));
         }
         if (beta < alpha)
         {
-            return (foundNodeAt->value) ;
+            return (foundNodeAt->value);
         }
-    }*/
-    double stand_pat = color * eval(&board);
-    if (depth <= 0 || checkKing() < 2)
+    }
+    if (depth == 0 || checkKing() < 2)
     {
         return stand_pat;
     }
-    if (stand_pat >= beta)
-        return beta;
-    if (alpha < stand_pat)
-        alpha = stand_pat;
-
-    Array posMoves = (Array){(Possiblemove *)calloc(1, sizeof(Possiblemove)), 1, 1};
-    //initArr(&posMoves, 0);
+    Array posMoves;
+    initArr(&posMoves, 40);
     getPossibleMovesPV(&posMoves, color);
+    if (posMoves.size == 0)
+    {
+
+        free(posMoves.ptr);
+        return stand_pat;
+    }
     indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
     customHeuristicPV(&posMoves, sortedArr);
-    int val = - 10000000;
+
     for (int i = 0; i < posMoves.size; i++)
     {
-        movePiece(getPieceAtPos((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
 
-        double score = -Quiesce(depth - 1, -beta, -alpha, -color);
+        initBoardHashMap();
+        movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
 
-        takeBack();
-        if( score > val) val = score;
-        if (score > alpha)
-            alpha = score;
-        if (score >= beta)
+        //double value = -negaMax(depth - 1, -beta, -alpha, -color);
+        double value = -Quiesce(depth - 1, -beta, -alpha, -color);
+
+        if (val > alpha)
+            alpha = val;
+        if (value > val)
         {
-             butterfly_PV[(posMoves.ptr + (sortedArr + i)->index1)->posx][(posMoves.ptr + (sortedArr + i)->index1)->posy][(posMoves.ptr + (sortedArr + i)->index1)->targetx][(posMoves.ptr + (sortedArr + i)->index1)->targety] += depth * depth;
-       
+            localBestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
+
+            val = value;
+        }
+
+        if (takeBack() != 1 && alpha > beta)
+        {
+            butterfly_PV[(posMoves.ptr + (sortedArr + i)->index1)->posx][(posMoves.ptr + (sortedArr + i)->index1)->posy][(posMoves.ptr + (sortedArr + i)->index1)->targetx][(posMoves.ptr + (sortedArr + i)->index1)->targety] += depth * depth;
+        }
+        if (stand_pat >= beta)
+        {
             free(posMoves.ptr);
             free(sortedArr);
             return beta;
         }
-    }
-    if (posMoves.size == 0)
-    {
-        return stand_pat;
-    }/*
-    if (foundNodeAt == NULL || (foundNodeAt)->depth < depth)
-    {
-        char flag;
-        if (val <= alphaOrig)
+        if (alpha < stand_pat)
+            alpha = stand_pat;
+        if (alpha >= beta)
         {
-            flag = 'u';
+
+            break;
         }
-        else if (val > beta)
+    }
+    if (depth > 4)
+    {
+        if (foundNodeAt == NULL)
         {
-            flag = 'l';
+            char flag;
+            if (val <= alphaOrig)
+            {
+                flag = 'u';
+            }
+            else if (val > beta)
+            {
+                flag = 'l';
+            }
+            else
+            {
+                flag = 'e';
+            }
+
+            if (color == 1)
+            {
+                ttAble_PV = insert(ttAble_PV, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+            }
+            else
+            {
+                ttAble_PV2 = insert(ttAble_PV2, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+            }
         }
         else
         {
-            flag = 'e';
+            if ((foundNodeAt)->depth < depth)
+            {
+
+                if (val <= alphaOrig)
+                {
+                    foundNodeAt->flag = 'u';
+                }
+                else if (val > beta)
+                {
+                    foundNodeAt->flag = 'l';
+                }
+                else
+                {
+                    foundNodeAt->flag = 'e';
+                }
+                foundNodeAt->depth = depth;
+                foundNodeAt->value = val;
+            }
         }
-        ttAble_PV = insert(ttAble_PV, (nodeValue){val, boardID, depth, flag});
-    }*/
+    }
     free(posMoves.ptr);
     free(sortedArr);
     return alpha;
@@ -1439,74 +1782,97 @@ Possiblemove bestMove;
 
     return value
 }*/
-double negaMax(int depth, int alpha, int beta, int color)
+int negaMax(int depth, int alpha, int beta, int color)
 {
 
-    long long  boardID = hash(&board);
+    numNodes++;
+    long long boardID = hash(&board);
     double alphaOrig = alpha;
-    struct Node *foundNodeAt = search(ttAble, boardID);
+
+    Possiblemove localBestMove;
+    struct Node *foundNodeAt;
+    int val = -1000000;
+    if (color == 1)
+    {
+        foundNodeAt = search(ttAble, boardID);
+    }
+    else
+        foundNodeAt = search(ttAble2, boardID);
     if (foundNodeAt != NULL && (foundNodeAt)->depth >= depth)
     {
 
         if (foundNodeAt->flag == 'e')
         {
-            return (foundNodeAt->value) ;
+
+            return (foundNodeAt->value);
         }
         else if (foundNodeAt->flag == 'l')
         {
-            alpha = max(alpha, (foundNodeAt->value) );
+            alpha = max(alpha, (foundNodeAt->value));
         }
         else if (foundNodeAt->flag == 'u')
         {
-            beta = min(beta, (foundNodeAt->value) );
+            beta = min(beta, (foundNodeAt->value));
         }
         if (beta < alpha)
         {
-            return (foundNodeAt->value) ;
+            return (foundNodeAt->value);
         }
     }
-    if (depth <= 0 || checkKing() < 2)
+    if (depth == 0 || checkKing() < 2)
     {
-        return Quiesce(6, alpha, beta, color);
+        return Quiesce(13, alpha, beta, color);
     }
+    initBoardHashMap();
     Array posMoves;
     initArr(&posMoves, 40);
     getPossibleMoves(&posMoves, color);
     indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
     customHeuristic(&posMoves, sortedArr);
-    int val = -1000000;
+    int b;
     for (int i = 0; i < posMoves.size; i++)
     {
 
-        movePiece(getPieceAtPos((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
+        initBoardHashMap();
+        movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
 
-        double value = -negaMax(depth - 1, -beta, -alpha, -color);
+        int value = -negaMax(depth - 1, -beta, -alpha, -color);
+        //double value = -negaMax(depth - 1, -beta, -alpha, -color);
         if (value > val)
         {
+            localBestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
+
             val = value;
         }
-
-        if (val > alpha)
-            alpha = val;
-
-        if (takeBack() != 1 && alpha > beta)
+        alpha = max(val, alpha);
+        int isPV = takeBack();
+        if ( isPV!= 1 && alpha > beta)
         {
             butterfly[(posMoves.ptr + (sortedArr + i)->index1)->posx][(posMoves.ptr + (sortedArr + i)->index1)->posy][(posMoves.ptr + (sortedArr + i)->index1)->targetx][(posMoves.ptr + (sortedArr + i)->index1)->targety] += depth * depth;
         }
-        if (alpha > beta)
+        if (alpha >= beta)
         {
 
             break;
         }
+        b = alpha + 1;
+        if (timeEnd <= time(NULL))
+        {
+
+            free(posMoves.ptr);
+            free(sortedArr);
+            return val;
+        }
     }
-    if (foundNodeAt == NULL || (foundNodeAt)->depth < depth)
+
+    if (foundNodeAt == NULL)
     {
         char flag;
         if (val <= alphaOrig)
         {
             flag = 'u';
         }
-        else if (val > beta)
+        else if (val >= beta)
         {
             flag = 'l';
         }
@@ -1514,65 +1880,298 @@ double negaMax(int depth, int alpha, int beta, int color)
         {
             flag = 'e';
         }
-        //ttAble = insert(ttAble, (nodeValue){val, boardID, depth, flag});
+
+        if (color == 1)
+        {
+            ttAble = insert(ttAble, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+        }
+        else
+        {
+            ttAble2 = insert(ttAble2, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+        }
+    }
+    else
+    {
+        if ((foundNodeAt)->depth < depth)
+        {
+
+            if (val <= alphaOrig)
+            {
+                foundNodeAt->flag = 'u';
+            }
+            else if (val >= beta)
+            {
+                foundNodeAt->flag = 'l';
+            }
+            else
+            {
+                foundNodeAt->flag = 'e';
+            }
+            foundNodeAt->depth = depth;
+            foundNodeAt->value = val;
+        }
     }
     free(posMoves.ptr);
     free(sortedArr);
-    return alpha;
-}
+    return val;
+} // printf("%1.d %% Done!\n", (int)((double)i / (double)posMoves.size * 100));
+
+int globalval = -1000000;
 double negaMax1(int depth, int alpha, int beta, int color)
 {
-
-    if (depth <= 0 || checkKing() < 2)
+    numNodes++;
+    long long boardID = hash(&board);
+    double alphaOrig = alpha;
+    Possiblemove localBestMove;
+    struct Node *foundNodeAt;
+    if (color == 1)
     {
-        return Quiesce(6, alpha, beta, color);
+        foundNodeAt = search(ttAble, boardID);
     }
+    else
+        foundNodeAt = search(ttAble2, boardID);
+    if (foundNodeAt != NULL && (foundNodeAt)->depth >= depth)
+    {
+
+        if (foundNodeAt->flag == 'e')
+        {
+            if (globalval < foundNodeAt->value)
+            {
+                globalval = foundNodeAt->value;
+                bestMove = foundNodeAt->move;
+            }
+
+            return (foundNodeAt->value);
+        }
+        else if (foundNodeAt->flag == 'l')
+        {
+            alpha = max(alpha, (foundNodeAt->value));
+        }
+        else if (foundNodeAt->flag == 'u')
+        {
+            beta = min(beta, (foundNodeAt->value));
+        }
+    }
+
+    if (depth == 0 || checkKing() < 2)
+    {
+        return Quiesce(13, alpha, beta, color);
+    }
+    initBoardHashMap();
+
+    int val = -10000000;
     Array posMoves;
-    initArr(&posMoves, 0);
+    initArr(&posMoves, 40);
     getPossibleMoves(&posMoves, color);
     indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
     customHeuristic(&posMoves, sortedArr);
-    int bestVal = -100000;
     for (int i = 0; i < posMoves.size; i++)
     {
-        ttAble = NULL;
-        ttAble_PV= NULL;
-        printf("%1.d %% Done!\n", (int)((double)i / (double)posMoves.size * 100));
-        movePiece(getPieceAtPos((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
 
-        double value = -negaMax(depth - 1, -beta, -alpha, -color);
+        initBoardHashMap();
+        movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
 
-        
-
-        if (bestVal < value)
+        int value = -negaMax(depth - 1, -beta, -alpha, -color);
+        //double value = -negaMax(depth - 1, -beta, -alpha, -color);
+        if (value > globalval)
         {
+            globalval = value;
             bestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
-            bestVal = value;
         }
-
-        if (value > alpha)
-            alpha = value;
+        val = max(val, value);
+        alpha = max(val, alpha);
 
         if (takeBack() != 1 && alpha > beta)
         {
             butterfly[(posMoves.ptr + (sortedArr + i)->index1)->posx][(posMoves.ptr + (sortedArr + i)->index1)->posy][(posMoves.ptr + (sortedArr + i)->index1)->targetx][(posMoves.ptr + (sortedArr + i)->index1)->targety] += depth * depth;
         }
-        if (alpha > beta)
+        if (alpha >= beta)
         {
+            bestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
 
             break;
         }
-    }
-    free(sortedArr);
-    }//printf("\rDone Calculating\n");
-    free(posMoves.ptr);
-    return alpha;
-}
+        if (timeEnd <= time(NULL))
+        {
 
+            free(posMoves.ptr);
+            free(sortedArr);
+            return val;
+        }
+    }
+    if (depth > 2)
+        if (foundNodeAt == NULL)
+        {
+            char flag;
+            if (val <= alphaOrig)
+            {
+                flag = 'u';
+            }
+            else if (val >= beta)
+            {
+                flag = 'l';
+            }
+            else
+            {
+                flag = 'e';
+            }
+
+            if (color == 1)
+            {
+                ttAble = insert(ttAble, (nodeValue){val, boardID, depth, flag}, &bestMove);
+            }
+            else
+            {
+                ttAble2 = insert(ttAble2, (nodeValue){val, boardID, depth, flag}, &bestMove);
+            }
+        }
+        else
+        {
+            if ((foundNodeAt)->depth < depth)
+            {
+
+                if (val <= alphaOrig)
+                {
+                    foundNodeAt->flag = 'u';
+                }
+                else if (val >= beta)
+                {
+                    foundNodeAt->flag = 'l';
+                }
+                else
+                {
+                    foundNodeAt->flag = 'e';
+                }
+                foundNodeAt->depth = depth;
+                foundNodeAt->value = val;
+            }
+        }
+    free(posMoves.ptr);
+    free(sortedArr);
+    return val;
+}
+int nextGuess(int alpha, int beta, int subtreeCount)
+{
+    return alpha + (beta - alpha) * (subtreeCount - 1) / subtreeCount;
+}
+int bns(int alpha, int beta, int depth, int color)
+{
+
+    initBoardHashMap();
+    Array posMoves;
+    initArr(&posMoves, 40);
+    getPossibleMoves(&posMoves, color);
+    indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
+    customHeuristic(&posMoves, sortedArr);
+    int subtreeCount = posMoves.size;
+
+    int betterCount = 0;
+    do
+    {
+        int test = nextGuess(alpha, beta, subtreeCount);
+        betterCount = 0;
+        for (int i = 0; i < posMoves.size; i++)
+        {
+
+            initBoardHashMap();
+            movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
+
+            int bestVal = -negaMax1(depth, -test, -(test - 1), -color);
+            takeBack();
+            alpha = max(bestVal, alpha);
+            beta = min(bestVal, beta);
+            if (bestVal >= test)
+            {
+                betterCount = betterCount + 1;
+                bestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
+            }
+        }
+        
+            
+        
+    } while (!(beta - alpha < 2 || betterCount == 1));
+
+}
+int mtdf(int f, int depth, int color)
+{
+
+    globalval = -1000000;
+
+    int bound[2] = {-INFINITY, +INFINITY}; // lower, upper
+    do
+    {
+
+        if (timeEnd <= time(NULL))
+        {
+            return 0;
+        }
+        int beta = f + (f == bound[0]);
+        f = negaMax1(depth, beta - 1, beta, color);
+
+        bound[f < beta] = f;
+    } while (bound[0] < bound[1]);
+
+    return f;
+}
+int iterative_deepening(time_t timet, int color)
+{
+    time_t start = time(NULL);
+    int depth = 1;
+    int firstguess = 0;
+    struct Node *searchedResult;
+    Possiblemove localBestMove = bestMove;
+
+    timeEnd = start + timet;
+    if (color)
+    {
+        searchedResult = search(ttAble, hash(&board));
+    }
+    else
+    {
+        searchedResult = search(ttAble2, hash(&board));
+    }
+    if (searchedResult != NULL)
+    {
+        depth = searchedResult->depth + 1;
+        firstguess = searchedResult->value;
+        bestMove = searchedResult->move;
+        globalval = searchedResult->value;
+    }
+    else
+    {
+        firstguess = Quiesce(-1, -100000000, 1000000000, color);
+    }
+     searched = 0;
+    while (start + timet > time(NULL)||searched==0)
+    {
+        localBestMove = bestMove;
+        printf("DEEPENING AT %d\n", depth);
+        
+        
+        int temp =0;
+        temp =  mtdf(firstguess, depth, color);
+        searched ++;
+       // temp= bns( -100000000, 1000000000, depth, color);;
+        if (start + timet < time(NULL))
+        {
+            
+            bestMove = localBestMove;
+            break;
+        }
+        firstguess = temp;
+
+        depth++;
+    }
+
+    //memFree();
+    printf("Took %d seconds target Time = %d seconds \n", time(NULL) - start, timet);
+    return firstguess;
+}
 // Prints out the Board in Console
 void refreshConsole(int turn)
 {
 
+    initBoardHashMap();
     //system("CLS"); // uncomment if you want it to refresh every time
     char can;
     int e = 0;
@@ -1598,7 +2197,7 @@ void refreshConsole(int turn)
                     {
 
                         int j;
-                        for (j = 0; j < board.size; j++)
+                        /*for (j = 0; j < board.size; j++)
                         {
                             if (((int)(getArr1(&board, j)->type)) > 64 && ((int)(getArr1(&board, j)->type)) < 123 && (e == getArr1(&board, j)->posy && i == getArr1(&board, j)->posx))
                             {
@@ -1614,12 +2213,25 @@ void refreshConsole(int turn)
 
                                 break;
                             }
-                        }
-                        if (j == board.size)
+                        }*/
+                        if (boardHashMap[i][e] == -1)
                         {
-                            //printf(" (%d , %d) ", i, e);
                             printf("\x1b[0m\x1b[37m+ ");
                         }
+                        else if ((int)getArr1(&board, boardHashMap[i][e])->team == (int)'w')
+                        {
+                            printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
+                        }
+                        else
+                        {
+                            printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
+                        }
+
+                        //if (j == board.size)
+                        /*{
+                            //printf(" (%d , %d) ", i, e);
+                            printf("\x1b[0m\x1b[37m+ ");
+                        }*/
                     }
             printf("\n");
         }
@@ -1642,6 +2254,7 @@ void refreshConsole(int turn)
                     }
                     else
                     {
+                        /*
                         can = 'f';
                         for (int j = 0; j < board.size; j++)
                         {
@@ -1664,6 +2277,19 @@ void refreshConsole(int turn)
                         if (can != 't')
                         {
                             printf("\x1b[0m\x1b[37m+ ");
+                        }*/
+
+                        if (boardHashMap[i][e] == -1)
+                        {
+                            printf("\x1b[0m\x1b[37m+ ");
+                        }
+                        else if ((int)getArr1(&board, boardHashMap[i][e])->team == (int)'w')
+                        {
+                            printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
+                        }
+                        else
+                        {
+                            printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
                         }
                     }
             printf("\n");
@@ -1677,6 +2303,10 @@ void copyArr(piece *target, piece *dest)
     {
         (*(dest + i)) = (piece){(*(target + i)).posx, (*(target + i)).posy, (*(target + i)).type, (*(target + i)).team};
     }
+}
+struct Node *copyTree(struct Node *cat)
+{
+    struct Node *stuff = NULL;
 }
 int main()
 {
@@ -1731,10 +2361,11 @@ int main()
     (*(board.ptr + 16)) = (piece){
         7, 7, 'r', 'b'};
 
+    initBoardHashMap();
     // ttAble = insert(ttAble, (nodeValue){0, hash(&board), 0, 'e'}, 0);
     // prints current state of board
     refreshConsole(-1);
-
+    printf("%d", sizeof(struct Node));
     int turn = 1; // Who's turn to move. 1 for white -1 for black
     char cat[5];  // input from console
     while (1 == 1)
@@ -1747,21 +2378,60 @@ int main()
         if (cat[0] == 'e')
             if (cat[1] == 'v')
             {
-                printf("eval : %f\n ID : %ld \n", eval(&board), hash(&board));
+                targetDepth = 14;
+                printf("eval : %f\n ID : %lld \n", eval(&board), hash(&board));
             }
             else if (cat[1] == 'x')
-            }else if (cat[1] == 'x') 
                 return 0;
 
-
-        if (cat[0] == 'b' && cat[1] == 'o')
+        if (cat[0] == 'c' && cat[1] == 'l')
         {
+            printf("clearing...");
+            destroyTree(ttAble);
+            destroyTree(ttAble2);
+            destroyTree(ttAble_PV2);
+            destroyTree(ttAble_PV);
+            ttAble = NULL;
+            ttAble2 = NULL;
+            ttAble_PV = NULL;
+            ttAble_PV2 = NULL;
+            printf("\ndone.");
+        }
+        else
+            // if user puts word bo at start then it will let the bot make it's move
+            if (cat[0] == 'p' && cat[1] == 'm')
+        {
+
+            int pickedPosX = 7 - ((int)cat[2] - 65) % 32;
+            int pickedPosY = (int)cat[3] - 49;
+
+            Array possMoves;
+            possMoves.ptr = malloc(0);
+            possMoves.size = 0;
+
+            possMoves.realSize = 0;
+            getPossibleMoves(&possMoves, turn);
+            int i;
+
+            for (i = 0; i < possMoves.size; i++)
+            { // searches for the move specified by the Human and is in the list of possible moves
+                Possiblemove *point = getArr(&possMoves, i);
+                if (point->posx == pickedPosX && point->posy == pickedPosY)
+                {
+
+                    printf("%c , %c to %c , %d\n", cat[2], cat[3], (7 - point->targetx) + 65, point->targety + 1);
+                }
+            }
+        }
+        else if (cat[0] == 'b' && cat[1] == 'o')
+        {
+            numNodes = 0;
             for (int from = 0; from < 8; from++)
                 for (int to = 0; to < 8; to++)
                     for (int from1 = 0; from1 < 8; from1++)
                         for (int to1 = 0; to1 < 8; to1++)
                             butterfly[from][to][from1][to1] = 0;
-                            
+
             for (int from = 0; from < 8; from++)
                 for (int to = 0; to < 8; to++)
                     for (int from1 = 0; from1 < 8; from1++)
@@ -1770,13 +2440,39 @@ int main()
             bestValue = -10000000;
             long seconds = time(NULL);
             // gets the value of the board and best move is put in the Variable bestMove
-            double val = negaMax1(5, -1000000000, 1000000000, turn);
+            int val = iterative_deepening(10, turn);
+            printf("Took %ld seconds\n%lluNodes Recorded\nBest Move is %c%d  to %c%d \n ", time(0) - seconds, numNodes, ((7 - bestMove.posx) + 65), bestMove.posy + 1, (7 - bestMove.targetx) + 65, bestMove.targety + 1);
+            printf("Bot confidence : %d\n", val);
+            printf("\nEvaluation : \nMemory of movesDone : %d\nMemory of board :%d", movesDone.realSize, board.realSize);
+            Array possMoves;
+            possMoves.ptr = malloc(0);
+            possMoves.size = 0;
 
-            printf("Took %ld seconds\n%dNodes Recorded\nBest Move is %c%d  to %c%d \n ", time(0) - seconds, 0, ((7 - bestMove.posx) + 65), bestMove.posy + 1, (7 - bestMove.targetx) + 65, bestMove.targety + 1);
-            printf("Bot confidence : %f\n", val);
-            movePiece(getPieceAtPos(bestMove.posx, bestMove.posy), bestMove.targetx, bestMove.targety);
-            printf("\nTurn: %d\n", movesDone.size);
-            turn *= -1;
+            possMoves.realSize = 0;
+            getPossibleMoves(&possMoves, turn);
+            int i;
+
+            for (i = 0; i < possMoves.size; i++)
+            { // searches for the move specified by the Human and is in the list of possible moves
+                Possiblemove *point = getArr(&possMoves, i);
+                if (point->posx == bestMove.posx && point->posy == bestMove.posy && point->targetx == bestMove.targetx && point->targety == bestMove.targety)
+                {
+
+                    break;
+                }
+            }
+
+            if (i < possMoves.size)
+            { // if  the move is specified by the Human and is in the list of possible moves
+
+                movePiece(getPieceAtPosHash(bestMove.posx, bestMove.posy), bestMove.targetx, bestMove.targety);
+                printf("\nTurn: %d\n", movesDone.size);
+                turn *= -1;
+            }
+            else
+                printf("\nInvalid Move Try Again\n");
+
+            freeArr(&possMoves);
             refreshConsole(-turn);
         }
         else // reverses a move
@@ -1797,11 +2493,10 @@ int main()
                 Array possMoves;
                 possMoves.ptr = malloc(0);
                 possMoves.size = 0;
-            possMoves.size = 0;
+
                 possMoves.realSize = 0;
                 getPossibleMoves(&possMoves, turn);
                 int i;
-            int i;
 
                 for (i = 0; i < possMoves.size; i++)
                 { // searches for the move specified by the Human and is in the list of possible moves
@@ -1813,12 +2508,12 @@ int main()
                     }
                 }
 
-                if (i < possMoves.size)
-                { // if  the move is specified by the Human and is in the list of possible moves
+                if (i < possMoves.size) // this works because the for loop breaks only when i is greater than the list of possible moves
+                {                       // if  the move is specified by the Human and is in the list of possible moves
 
                     movePiece(canMove, 7 - (((int)cat[2] - 65) % 32), (int)cat[3] - 49);
+
                     printf("%c, %d  to %c , %d   Real : %d , %d\n", 7 - pickedPosX + 65, pickedPosY + 1, cat[2], (int)cat[3] - 49, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posx, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posy);
-                printf("%d, %d  to %d , %d   Real : %d , %d\n", pickedPosX, pickedPosY, (7 - ((int)cat[2] - 65) % 32), (int)cat[3] - 49, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posx, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posy);
 
                     printf("\nTurn: %d\n", movesDone.size);
                     turn *= -1;
@@ -1826,6 +2521,7 @@ int main()
                 }
                 else
                     printf("\nInvalid Move Try Again\n");
+
                 freeArr(&possMoves);
             }
             else
@@ -1833,7 +2529,6 @@ int main()
                 printf("\nInvalid Move Try Again\n");
             }
         } /*
-            }/*
             printf("Looking at %d\n" , movesDone.size-1);
             for (int i = 0; i < movesDone.size; i++) {
                 move* look = (movesDone.ptr + i);
