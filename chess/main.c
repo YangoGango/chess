@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <math.h>
 #include <time.h>
+#define  TABLE_SIZE 50000
 const int ONE_MB = 1048576;
 unsigned int butterfly[8][8][8][8];
 long nodesProcessed = 0;
@@ -636,7 +637,7 @@ void changeSize(Array *target, int size)
 }
 void initArr(Array *arr, int size)
 {
-    *arr = (Array){(Possiblemove *)calloc(size, sizeof(Possiblemove)), 0, size};
+    *arr = (Array){(Possiblemove *)malloc(size* sizeof(Possiblemove)), 0, size};
     /*
     arr->ptr =(Possiblemove*) calloc(size , sizeof(Possiblemove));
     arr->size = size;
@@ -763,9 +764,8 @@ void initArrList(movesList *arr, int size)
 void addArrList(movesList *arr, move obj)
 {
     arr->size += 1;
-    arr->realSize = arr->size > arr->realSize ? arr->size : arr->realSize;
     changeSizeList(arr, arr->size);
-    *(arr->ptr + (arr->size - 1)) = obj;
+    *(arr->ptr + arr->size - 1) = obj;
 }
 move *getArrList(movesList *arr, int i)
 {
@@ -792,11 +792,153 @@ int getPieceAtPosHash(int x, int y)
 {
     return boardHashMap[x][y];
 }
+int checkBoard()
+{
+    for (int i = 0; i < board.size; i++)
+        if(boardHashMap[board.ptr[i].posx][board.ptr[i].posy] != i)return 0;
+    return 1;
+}
+// Prints out the Board in Console
+void refreshConsole(int turn)
+{
+    //system("CLS"); // uncomment if you want it to refresh every time
+    char can;
+    int e = 0;
+
+    if (turn != 1)
+    {
+        for (e = 7; e >= -1; e--)
+        { //Y
+
+            if (e == -1)
+            {
+                printf("%s \n", "   _______________");
+                printf("%s \n", "   A B C D E F G H");
+            }
+            else
+                for (int i = 8; i >= 0; i--) //X
+
+                    if (i == 8)
+                    {
+                        printf("%d| ", e + 1);
+                    }
+                    else
+                    {
+
+                        int j;
+                        /*for (j = 0; j < board.size; j++)
+                        {
+                            if (((int)(getArr1(&board, j)->type)) > 64 && ((int)(getArr1(&board, j)->type)) < 123 && (e == getArr1(&board, j)->posy && i == getArr1(&board, j)->posx))
+                            {
+                                //printf(" (%d , %d) ", i, e);
+                                if ((int)getArr1(&board, j)->team == (int)'w')
+                                {
+                                    printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, j)->type));
+                                }
+                                else
+                                {
+                                    printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, j)->type));
+                                }
+
+                                break;
+                            }
+                        }*/
+                        if (boardHashMap[i][e] == -1)
+                        {
+                            printf("\x1b[0m\x1b[37m+ ");
+                        }
+                        else if ((int)getArr1(&board, boardHashMap[i][e])->team == (int)'w')
+                        {
+                            printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
+                        }
+                        else
+                        {
+                            printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
+                        }
+
+                        //if (j == board.size)
+                        /*{
+                            //printf(" (%d , %d) ", i, e);
+                            printf("\x1b[0m\x1b[37m+ ");
+                        }*/
+                    }
+            printf("\n");
+        }
+    }
+    else
+        for (e = 0; e <= 8; e++)
+        { //Y
+
+            if (e == 8)
+            {
+                printf("%s \n", "   _______________");
+                printf("%s \n", "   H G F E D C B A");
+            }
+            else
+                for (int i = -1; i < 8; i++) //X
+
+                    if (i == -1)
+                    {
+                        printf("%d| ", e + 1);
+                    }
+                    else
+                    {
+                        /*
+                        can = 'f';
+                        for (int j = 0; j < board.size; j++)
+                        {
+                            if (((int)(getArr1(&board, j)->type)) > 64 && ((int)(getArr1(&board, j)->type)) < 123 && (e == getArr1(&board, j)->posy && i == getArr1(&board, j)->posx))
+                            {
+
+                                if ((int)getArr1(&board, j)->team == (int)'w')
+                                {
+
+                                    printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, j)->type));
+                                }
+                                else
+                                {
+                                    printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, j)->type));
+                                }
+                                can = 't';
+                                break;
+                            }
+                        }
+                        if (can != 't')
+                        {
+                            printf("\x1b[0m\x1b[37m+ ");
+                        }*/
+
+                        if (boardHashMap[i][e] == -1)
+                        {
+                            printf("\x1b[0m\x1b[37m+ ");
+                        }
+                        else if ((int)getArr1(&board, boardHashMap[i][e])->team == (int)'w')
+                        {
+                            printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
+                        }
+                        else
+                        {
+                            printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
+                        }
+                    }
+            printf("\n");
+        }
+}
+void boardRefresh(int target){
+    for(int i = target ; i < board.size;i++){
+       boardHashMap[(board.ptr + i)->posx][(board.ptr + i)->posy] = i;
+    }
+}
 // Moves a piece in the array 'board' in the specified location of the array to the x and y cordinates
 void movePiece(int location, int x, int y)
 {
+    if(x< 0||x>10){
+        
+        printf("Error\n\n\n");
+        exit(-1); 
+    }
+    // printf("%d %d %d %d\n\n\n",(board.ptr + location)->posx,(board.ptr + location)->posy, x, y); 
     int i = getPieceAtPosHash(x, y);
-
     boardHashMap[(board.ptr + location)->posx][(board.ptr + location)->posy] = -1;
     
     move temp;
@@ -804,21 +946,29 @@ void movePiece(int location, int x, int y)
     if (i != -1)
     {
         temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, (board.ptr + i)->type, (board.ptr + i)->team, (board.ptr + location)->type};
-
+        
         (board.ptr + location)->posx = x;
         (board.ptr + location)->posy = y;
         removeArr1(&board, i);
+        initBoardHashMap();
+        //printf("take");
     }
     else
     {
 
         temp = (move){(board.ptr + location)->posx, (board.ptr + location)->posy, x, y, '-', '-',(board.ptr + location)->type};
+            
         (board.ptr + location)->posx = x;
         (board.ptr + location)->posy = y;
     }
-   
     boardHashMap[x][y] = location;
     //Adds move to movelist
+    if(checkBoard()==0){
+        //printf("Check Failed %d , %d , %d",location,x,y);
+        //refreshConsole(1);
+        initBoardHashMap();
+        //exit(-1);
+    }
     addArrList(&movesDone, temp);
 }
 // Moves a piece in the array 'board' in the specified location of the array to the x and y cordinates NO CAPTURES
@@ -835,13 +985,15 @@ int takeBack()
 {
     if (movesDone.size > 0)
     {
-            initBoardHashMap();
+        //printf("t");
         move *lookat = (((movesDone.ptr + movesDone.size - 1)));
 
-        int canMove = getPieceAtPos(lookat->targetx, lookat->targety);
+        int canMove = getPieceAtPosHash(lookat->targetx, lookat->targety);
         //(board.ptr + canMove)->type= lookat->takingpiece;
         //move the piece back
         movePieceFast(canMove, lookat->posx, lookat->posy);
+        
+        
         //if there was a piece where there were add it back
         if (lookat->type != '-' && lookat->team != '-')
         {
@@ -849,45 +1001,73 @@ int takeBack()
             boardHashMap[lookat->targetx][lookat->targety] = addArr1(&board, (piece){lookat->targetx, lookat->targety, lookat->type, lookat->team});
             movesDone.size--;
 
-            initBoardHashMap();
             return 1;
         }
+        //printf("b\n");
         movesDone.size--;
+    }else{
+        printf("Takeback Failed");
+        exit(-1);
+    }
+    
+    if(checkBoard()==0){
+        //printf("Check Failed tb");
+        //refreshConsole(1);
+        initBoardHashMap();
+        //exit(-1);
     }
 
-    initBoardHashMap();
     return 0;
 }
-double getPieceVal(piece *obj)
+double getPieceVal(piece *obj, int weight)
 { // get Value of a piece based on it's position on the board and it's worth
     int team = 1;
-    if (obj->team == 'w')
+    if (obj->team == 'b')
         team *= -1;
 
     switch (obj->type)
     {
     case 'k':
-        return _king_Value + getPoints(kingMap, obj->posx, obj->posy, team);
+        return _king_Value +weight* getPoints(kingMap, obj->posx, obj->posy, team);
     case 'q':
-        return _queen_Value + getPoints(queenMap, obj->posx, obj->posy, team);
+        return _queen_Value +weight* getPoints(queenMap, obj->posx, obj->posy, team);
     case 'r':
-        return _rook_Value + getPoints(rookMap, obj->posx, obj->posy, team);
+        return _rook_Value + weight*getPoints(rookMap, obj->posx, obj->posy, team);
     case 'b':
-        return _bishop_Value + getPoints(bishopMap, obj->posx, obj->posy, team);
+        return _bishop_Value +weight* getPoints(bishopMap, obj->posx, obj->posy, team);
     case 'h':
-        return _knight_Value + getPoints(knightMap, obj->posx, obj->posy, team);
+        return _knight_Value +weight* getPoints(knightMap, obj->posx, obj->posy, team);
     case 'p':
-        return _pawn_Value + getPoints(pawnMap, obj->posx, obj->posy, team);
+        return _pawn_Value +weight* getPoints(pawnMap, obj->posx, obj->posy, team);
     }
     return 0;
 }
 
-static struct Node *ttAble;
+double getPieceValP(piece *obj)
+{ // get Value of a piece based on it's position on the board and it's worth
+    switch (obj->type)
+    {
+    case 'k':
+        return _king_Value ;
+    case 'q':
+        return _queen_Value ;
+    case 'r':
+        return _rook_Value ;
+    case 'b':
+        return _bishop_Value;
+    case 'h':
+        return _knight_Value ;
+    case 'p':
+        return _pawn_Value ;
+    }
+    return 0;
+}
+static struct Node *ttAble[TABLE_SIZE];
 
-static struct Node *ttAble2;
-static struct Node *ttAble_PV;
+static struct Node *ttAble2[TABLE_SIZE];
+static struct Node *ttAble_PV[TABLE_SIZE];
 
-static struct Node *ttAble_PV2;
+static struct Node *ttAble_PV2[TABLE_SIZE];
 
 void iterate(struct Node *root, struct Node *sum, float cutoff)
 {
@@ -916,7 +1096,7 @@ void memFree()
     totalDepth = 0;
     counterOfNodes = 0;
     double ratios[4] = {0, 0, 0, 0};
-    count(ttAble);
+    count(ttAble[0]);
     ratios[0] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
     numOfNodes = 0;
     totalAge = 0;
@@ -934,11 +1114,14 @@ void memFree()
     count(ttAble_PV2);
     ratios[3] = totalAge / numOfNodes * (totalDepth / counterOfNodes);
     double cutOff = (memoryCutOff / (counterOfNodes * sizeof(struct Node)));
+    for(int i = 0 ; i < sizeof(ttAble) / sizeof(struct Node*) ; i++){
 
-    ttAble = copy(ttAble, cutOff * ratios[0]);
-    ttAble2 = copy(ttAble2, cutOff * ratios[1]);
-    ttAble_PV = copy(ttAble_PV, cutOff * ratios[2]);
-    ttAble_PV2 = copy(ttAble_PV2, cutOff * ratios[3]);
+        ttAble[i] = copy(ttAble[i], cutOff * ratios[0]);
+        ttAble2[i] = copy(ttAble2[i], cutOff * ratios[1]);
+    }
+    
+    ttAble_PV[0] = copy(ttAble_PV, cutOff * ratios[2]);
+    ttAble_PV2[0] = copy(ttAble_PV2, cutOff * ratios[3]);
 
     printf("done\n");
 }
@@ -1115,12 +1298,16 @@ int compPiecePos(const void *p, const void *q)
 }
 long long hash(ArrayP *pieceMap)
 {
-    qsort(pieceMap->ptr, pieceMap->size, sizeof(piece), compPiecePos);
+    
+    piece* hashCache= malloc(pieceMap->size * sizeof(piece));
+    memcpy(hashCache, pieceMap->ptr ,pieceMap->size * sizeof(piece));
+    //qsort(hashCache, pieceMap->size, sizeof(piece), compPiecePos);
     long long h = 0;
     for (int i = 0; i < pieceMap->size; i++)
     {
-        h = h ^ table[(pieceMap->ptr + i)->posx][(pieceMap->ptr + i)->posy][getPieceID((piece *)(pieceMap->ptr + i))];
+        h = h ^ table[(hashCache + i)->posx][(hashCache + i)->posy][getPieceID((piece *)(hashCache + i))];
     }
+    free(hashCache);
     return h;
 }
 void getPossibleMoves(Array *output, int color)
@@ -1551,11 +1738,16 @@ void customHeuristic(Array *arr, indexes *output)
 }
 void customHeuristicPV(Array *arr, indexes *output)
 { // It's a idea i thought based on the killer Heuristic where the moves is sorted based on simlar best moves based on simular depth
-
+    Possiblemove* temp  ;
     for (int i = 0; i < arr->size; i++)
     {
+        temp =  (Possiblemove*)( arr->ptr +i);
+        //printf("1");
         (output + i)->index1 = i;
-        (output + i)->index2 = butterfly_PV[(arr->ptr + i)->posx][(arr->ptr + i)->posy][(arr->ptr + i)->targetx][(arr->ptr + i)->targety];
+        //printf("%p + %d %d %d %d \n",temp,temp->posx, temp->posy,temp->targetx,temp->targety);
+        (output + i)->index2 =getPieceValP(board.ptr+getPieceAtPosHash(temp->posx, temp->posy))-getPieceValP(board.ptr+getPieceAtPosHash(temp->targetx, temp->targety));
+        
+        //printf("1\n");
     }
     qsort(output, arr->size, sizeof(indexes), compareIndexes);
 }
@@ -1563,7 +1755,7 @@ double eval(ArrayP *board)
 {
     double pieceScore = 0;
     double mobilityScore = 0;
-    mobilityScore = getNumPossibleMoves(1) - getNumPossibleMoves(-1);
+    //mobilityScore = getNumPossibleMoves(1) - getNumPossibleMoves(-1);
     //printf("%f \n",mobilityScore);
     double whiteMaterialScore = 0;
     double blackMaterialScore = 0;
@@ -1571,12 +1763,12 @@ double eval(ArrayP *board)
     {
         if ((board->ptr + i)->team == 'w')
         {
-            whiteMaterialScore += getPieceVal((board->ptr + i));
+            whiteMaterialScore += getPieceVal((board->ptr + i),3);
         }
         else
         {
 
-            blackMaterialScore += getPieceVal((board->ptr + i));
+            blackMaterialScore += getPieceVal((board->ptr + i),1);
         }
     }
     pieceScore = whiteMaterialScore - blackMaterialScore;
@@ -1594,7 +1786,7 @@ double Quiesce(int depth, double alpha, double beta, int color)
     long long boardID = hash(&board);
     double alphaOrig = alpha;
 
-    initBoardHashMap();
+    
     int stand_pat = eval(&board) * color;
     if (stand_pat >= beta)
         return beta;
@@ -1607,10 +1799,10 @@ double Quiesce(int depth, double alpha, double beta, int color)
     int val = -1000000;
     if (color == 1)
     {
-        foundNodeAt = search(ttAble_PV, boardID);
+        foundNodeAt = search(ttAble_PV[boardID%TABLE_SIZE], boardID);
     }
     else
-        foundNodeAt = search(ttAble_PV2, boardID);
+        foundNodeAt = search(ttAble_PV2[boardID%TABLE_SIZE], boardID);
     if (foundNodeAt != NULL && (foundNodeAt)->depth >= depth)
     {
 
@@ -1641,7 +1833,6 @@ double Quiesce(int depth, double alpha, double beta, int color)
     getPossibleMovesPV(&posMoves, color);
     if (posMoves.size == 0)
     {
-
         free(posMoves.ptr);
         return stand_pat;
     }
@@ -1650,10 +1841,14 @@ double Quiesce(int depth, double alpha, double beta, int color)
 
     for (int i = 0; i < posMoves.size; i++)
     {
-
-        initBoardHashMap();
-        movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
-
+        int pieceA= getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy);
+        int pieceB= getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->targetx,(posMoves.ptr + (sortedArr + i)->index1)->targety);
+        if(getPieceValP(board.ptr + pieceA)-getPieceValP(board.ptr + pieceB)<20)continue;
+        //printf("Q %d , %d  to %d %d \n",(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy,(posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety); 
+        movePiece(pieceA, 
+                            (posMoves.ptr + (sortedArr + i)->index1)->targetx,
+                            (posMoves.ptr + (sortedArr + i)->index1)->targety);
+        
         //double value = -negaMax(depth - 1, -beta, -alpha, -color);
         double value = -Quiesce(depth - 1, -beta, -alpha, -color);
 
@@ -1704,11 +1899,11 @@ double Quiesce(int depth, double alpha, double beta, int color)
 
             if (color == 1)
             {
-                ttAble_PV = insert(ttAble_PV, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+                //ttAble_PV[boardID%TABLE_SIZE] = insert(ttAble_PV[boardID%TABLE_SIZE], (nodeValue){val, boardID, depth, flag}, &localBestMove);
             }
             else
             {
-                ttAble_PV2 = insert(ttAble_PV2, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+                //ttAble_PV2[boardID%TABLE_SIZE] = insert(ttAble_PV2[boardID%TABLE_SIZE], (nodeValue){val, boardID, depth, flag}, &localBestMove);
             }
         }
         else
@@ -1788,16 +1983,15 @@ int negaMax(int depth, int alpha, int beta, int color)
     numNodes++;
     long long boardID = hash(&board);
     double alphaOrig = alpha;
-
     Possiblemove localBestMove;
     struct Node *foundNodeAt;
     int val = -1000000;
     if (color == 1)
     {
-        foundNodeAt = search(ttAble, boardID);
+        foundNodeAt = search(ttAble[boardID%TABLE_SIZE], boardID);
     }
     else
-        foundNodeAt = search(ttAble2, boardID);
+        foundNodeAt = search(ttAble2[boardID%TABLE_SIZE], boardID);
     if (foundNodeAt != NULL && (foundNodeAt)->depth >= depth)
     {
 
@@ -1816,31 +2010,34 @@ int negaMax(int depth, int alpha, int beta, int color)
         }
         if (beta < alpha)
         {
+            
             return (foundNodeAt->value);
         }
     }
     if (depth == 0 || checkKing() < 2)
     {
+        
         return Quiesce(13, alpha, beta, color);
     }
-    initBoardHashMap();
     Array posMoves;
     initArr(&posMoves, 40);
     getPossibleMoves(&posMoves, color);
     indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
     customHeuristic(&posMoves, sortedArr);
-    int b;
+    int b= beta;
     for (int i = 0; i < posMoves.size; i++)
     {
 
-        initBoardHashMap();
-        movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
-
-        int value = -negaMax(depth - 1, -beta, -alpha, -color);
+        Possiblemove* realMove = (posMoves.ptr + (sortedArr + i)->index1);
+        //printf("n %d , %d  to %d %d \n",realMove->posx, realMove->posy,realMove->targetx, realMove->targety); 
+        movePiece(getPieceAtPosHash(realMove->posx, realMove->posy), realMove->targetx, realMove->targety);
+        int value = -negaMax(depth - 1, -b, -alpha, -color);
         //double value = -negaMax(depth - 1, -beta, -alpha, -color);
+        if ( (val > alpha) && (val < beta) && (i > 0) )
+            val =-negaMax(depth - 1, -beta, -alpha, -color);
         if (value > val)
         {
-            localBestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
+            localBestMove = (Possiblemove){realMove->posx, realMove->posy, realMove->targetx, realMove->targety};
 
             val = value;
         }
@@ -1848,7 +2045,7 @@ int negaMax(int depth, int alpha, int beta, int color)
         int isPV = takeBack();
         if ( isPV!= 1 && alpha > beta)
         {
-            butterfly[(posMoves.ptr + (sortedArr + i)->index1)->posx][(posMoves.ptr + (sortedArr + i)->index1)->posy][(posMoves.ptr + (sortedArr + i)->index1)->targetx][(posMoves.ptr + (sortedArr + i)->index1)->targety] += depth * depth;
+            butterfly[realMove->posx][realMove->posy][realMove->targetx][realMove->targety] += depth * depth;
         }
         if (alpha >= beta)
         {
@@ -1856,9 +2053,9 @@ int negaMax(int depth, int alpha, int beta, int color)
             break;
         }
         b = alpha + 1;
-        if (timeEnd <= time(NULL))
+        if (0&&timeEnd <= time(NULL))
         {
-
+            printf("TimeUp");
             free(posMoves.ptr);
             free(sortedArr);
             return val;
@@ -1883,11 +2080,11 @@ int negaMax(int depth, int alpha, int beta, int color)
 
         if (color == 1)
         {
-            ttAble = insert(ttAble, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+            //ttAble[boardID%TABLE_SIZE] = insert(ttAble[boardID%TABLE_SIZE], (nodeValue){val, boardID, depth, flag}, &localBestMove);
         }
         else
         {
-            ttAble2 = insert(ttAble2, (nodeValue){val, boardID, depth, flag}, &localBestMove);
+            //ttAble2[boardID%TABLE_SIZE] = insert(ttAble2[boardID%TABLE_SIZE], (nodeValue){val, boardID, depth, flag}, &localBestMove);
         }
     }
     else
@@ -1917,8 +2114,10 @@ int negaMax(int depth, int alpha, int beta, int color)
 } // printf("%1.d %% Done!\n", (int)((double)i / (double)posMoves.size * 100));
 
 int globalval = -1000000;
-double negaMax1(int depth, int alpha, int beta, int color)
+double  negaMax1(int depth, int alpha, int beta, int color)
 {
+    
+    globalval = -1000000;
     numNodes++;
     long long boardID = hash(&board);
     double alphaOrig = alpha;
@@ -1926,10 +2125,10 @@ double negaMax1(int depth, int alpha, int beta, int color)
     struct Node *foundNodeAt;
     if (color == 1)
     {
-        foundNodeAt = search(ttAble, boardID);
+        foundNodeAt = search(ttAble[boardID%TABLE_SIZE], boardID);
     }
     else
-        foundNodeAt = search(ttAble2, boardID);
+        foundNodeAt = search(ttAble2[boardID%TABLE_SIZE], boardID);
     if (foundNodeAt != NULL && (foundNodeAt)->depth >= depth)
     {
 
@@ -1955,52 +2154,53 @@ double negaMax1(int depth, int alpha, int beta, int color)
 
     if (depth == 0 || checkKing() < 2)
     {
+        
         return Quiesce(13, alpha, beta, color);
     }
-    initBoardHashMap();
 
     int val = -10000000;
     Array posMoves;
     initArr(&posMoves, 40);
     getPossibleMoves(&posMoves, color);
-    indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
+    
+    indexes *sortedArr = malloc(posMoves.size*sizeof(indexes));
     customHeuristic(&posMoves, sortedArr);
     for (int i = 0; i < posMoves.size; i++)
     {
 
-        initBoardHashMap();
-        movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
-
+        for (int i = 0;0&& i < posMoves.size; i++)
+        {
+            Possiblemove* temp =(posMoves.ptr + i);
+            //printf("Moves  %d , %d  to %d %d \n",temp->posx, temp->posy,temp->targetx, temp->targety); 
+        }
+        //printf("n1 %d %d %d\n",i,( (sortedArr + i)->index1),posMoves.size); 
+        Possiblemove* realMove = (posMoves.ptr + (sortedArr + i)->index1);
+        //printf("n1 %d , %d  to %d %d \n",realMove->posx, realMove->posy,realMove->targetx, realMove->targety); 
+        movePiece(getPieceAtPosHash(realMove->posx, realMove->posy), realMove->targetx, realMove->targety);
         int value = -negaMax(depth - 1, -beta, -alpha, -color);
         //double value = -negaMax(depth - 1, -beta, -alpha, -color);
         if (value > globalval)
         {
             globalval = value;
-            bestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
+            printf("best move is %d %d to %d %d at %d" ,realMove->posx, realMove->posy, realMove->targetx, realMove->targety, value );
+            bestMove = (Possiblemove){realMove->posx, realMove->posy, realMove->targetx, realMove->targety};
         }
         val = max(val, value);
         alpha = max(val, alpha);
 
         if (takeBack() != 1 && alpha > beta)
         {
-            butterfly[(posMoves.ptr + (sortedArr + i)->index1)->posx][(posMoves.ptr + (sortedArr + i)->index1)->posy][(posMoves.ptr + (sortedArr + i)->index1)->targetx][(posMoves.ptr + (sortedArr + i)->index1)->targety] += depth * depth;
+            butterfly[realMove->posx][realMove->posy][realMove->targetx][realMove->targety] += depth * depth;
         }
         if (alpha >= beta)
         {
-            bestMove = (Possiblemove){(posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy, (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety};
+            bestMove = (Possiblemove){realMove->posx, realMove->posy, realMove->targetx, realMove->targety};
 
             break;
         }
-        if (timeEnd <= time(NULL))
-        {
-
-            free(posMoves.ptr);
-            free(sortedArr);
-            return val;
-        }
     }
-    if (depth > 2)
-        if (foundNodeAt == NULL)
+    
+        if (foundNodeAt == NULL&& depth > 2)
         {
             char flag;
             if (val <= alphaOrig)
@@ -2018,14 +2218,14 @@ double negaMax1(int depth, int alpha, int beta, int color)
 
             if (color == 1)
             {
-                ttAble = insert(ttAble, (nodeValue){val, boardID, depth, flag}, &bestMove);
+                //ttAble[boardID%TABLE_SIZE] = insert(ttAble[boardID%TABLE_SIZE], (nodeValue){val, boardID, depth, flag}, &bestMove);
             }
             else
             {
-                ttAble2 = insert(ttAble2, (nodeValue){val, boardID, depth, flag}, &bestMove);
+                //ttAble2 [boardID%TABLE_SIZE]= insert(ttAble2[boardID%TABLE_SIZE], (nodeValue){val, boardID, depth, flag}, &bestMove);
             }
         }
-        else
+        else 
         {
             if ((foundNodeAt)->depth < depth)
             {
@@ -2046,13 +2246,36 @@ double negaMax1(int depth, int alpha, int beta, int color)
                 foundNodeAt->value = val;
             }
         }
+    //printf("fin\n");
     free(posMoves.ptr);
+    //printf("fin2\n");
     free(sortedArr);
     return val;
 }
-int nextGuess(int alpha, int beta, int subtreeCount)
+int nextGuess(int alpha, int beta, int subtreeCount,int color)
 {
+    
+    /*struct Node *foundNodeAt;
+    long long boardID = hash(&board);
+    if (color == 1)
+    {
+        foundNodeAt = search(ttAble[boardID%TABLE_SIZE], boardID);
+    }
+    else
+        foundNodeAt = search(ttAble2[boardID%TABLE_SIZE], boardID);
+    if(foundNodeAt != NULL &&foundNodeAt->depth >2)return foundNodeAt->value;*/
     return alpha + (beta - alpha) * (subtreeCount - 1) / subtreeCount;
+}int negaCStar ( int depth,int min, int max, int color) {
+   int score = min;
+   while (min != max) {
+     int alpha = (min + max) / 2;
+      score = negaMax1 (alpha, alpha + 1, depth,color);
+      if ( score > alpha)
+         min = score;
+      else
+         max = score;
+   }
+   return score;
 }
 int bns(int alpha, int beta, int depth, int color)
 {
@@ -2064,15 +2287,16 @@ int bns(int alpha, int beta, int depth, int color)
     indexes *sortedArr = calloc(posMoves.size, sizeof(indexes));
     customHeuristic(&posMoves, sortedArr);
     int subtreeCount = posMoves.size;
+    initBoardHashMap();
 
     int betterCount = 0;
     do
     {
-        int test = nextGuess(alpha, beta, subtreeCount);
+        int test = nextGuess(alpha, beta, subtreeCount,color);
         betterCount = 0;
         for (int i = 0; i < posMoves.size; i++)
         {
-
+            
             initBoardHashMap();
             movePiece(getPieceAtPosHash((posMoves.ptr + (sortedArr + i)->index1)->posx, (posMoves.ptr + (sortedArr + i)->index1)->posy), (posMoves.ptr + (sortedArr + i)->index1)->targetx, (posMoves.ptr + (sortedArr + i)->index1)->targety);
 
@@ -2096,18 +2320,14 @@ int mtdf(int f, int depth, int color)
 {
 
     globalval = -1000000;
-
+    initBoardHashMap();
     int bound[2] = {-INFINITY, +INFINITY}; // lower, upper
     do
     {
 
-        if (timeEnd <= time(NULL))
-        {
-            return 0;
-        }
+        
         int beta = f + (f == bound[0]);
         f = negaMax1(depth, beta - 1, beta, color);
-
         bound[f < beta] = f;
     } while (bound[0] < bound[1]);
 
@@ -2115,6 +2335,8 @@ int mtdf(int f, int depth, int color)
 }
 int iterative_deepening(time_t timet, int color)
 {
+    
+     searched = 0;
     time_t start = time(NULL);
     int depth = 1;
     int firstguess = 0;
@@ -2122,13 +2344,14 @@ int iterative_deepening(time_t timet, int color)
     Possiblemove localBestMove = bestMove;
 
     timeEnd = start + timet;
-    if (color)
+    long long boardID =hash(&board);
+    if (color==1)
     {
-        searchedResult = search(ttAble, hash(&board));
+        searchedResult = search(ttAble[boardID%TABLE_SIZE], boardID);
     }
     else
     {
-        searchedResult = search(ttAble2, hash(&board));
+        searchedResult = search(ttAble2[boardID%TABLE_SIZE], boardID);
     }
     if (searchedResult != NULL)
     {
@@ -2136,28 +2359,31 @@ int iterative_deepening(time_t timet, int color)
         firstguess = searchedResult->value;
         bestMove = searchedResult->move;
         globalval = searchedResult->value;
+        searched ++;
     }
     else
     {
+
         firstguess = Quiesce(-1, -100000000, 1000000000, color);
     }
-     searched = 0;
-    while (start + timet > time(NULL)||searched==0)
+
+    printf("\n Guessed %d" , firstguess);
+    while (timeEnd > time(NULL)||searched ==0)
     {
         localBestMove = bestMove;
         printf("DEEPENING AT %d\n", depth);
         
         
         int temp =0;
-        temp =  mtdf(firstguess, depth, color);
-        searched ++;
-       // temp= bns( -100000000, 1000000000, depth, color);;
-        if (start + timet < time(NULL))
+        temp =  negaMax1(depth, -100000000, 1000000000 ,color);
+       //temp= bns( -100000000, 1000000000, depth, color);
+        if (timeEnd <= time(NULL)&& searched !=0)
         {
-            
+
             bestMove = localBestMove;
             break;
         }
+        searched ++;
         firstguess = temp;
 
         depth++;
@@ -2165,135 +2391,8 @@ int iterative_deepening(time_t timet, int color)
 
     //memFree();
     printf("Took %d seconds target Time = %d seconds \n", time(NULL) - start, timet);
+    printf("\n Guessed %d" , firstguess);
     return firstguess;
-}
-// Prints out the Board in Console
-void refreshConsole(int turn)
-{
-
-    initBoardHashMap();
-    //system("CLS"); // uncomment if you want it to refresh every time
-    char can;
-    int e = 0;
-
-    if (turn != 1)
-    {
-        for (e = 7; e >= -1; e--)
-        { //Y
-
-            if (e == -1)
-            {
-                printf("%s \n", "   _______________");
-                printf("%s \n", "   A B C D E F G H");
-            }
-            else
-                for (int i = 8; i >= 0; i--) //X
-
-                    if (i == 8)
-                    {
-                        printf("%d| ", e + 1);
-                    }
-                    else
-                    {
-
-                        int j;
-                        /*for (j = 0; j < board.size; j++)
-                        {
-                            if (((int)(getArr1(&board, j)->type)) > 64 && ((int)(getArr1(&board, j)->type)) < 123 && (e == getArr1(&board, j)->posy && i == getArr1(&board, j)->posx))
-                            {
-                                //printf(" (%d , %d) ", i, e);
-                                if ((int)getArr1(&board, j)->team == (int)'w')
-                                {
-                                    printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, j)->type));
-                                }
-                                else
-                                {
-                                    printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, j)->type));
-                                }
-
-                                break;
-                            }
-                        }*/
-                        if (boardHashMap[i][e] == -1)
-                        {
-                            printf("\x1b[0m\x1b[37m+ ");
-                        }
-                        else if ((int)getArr1(&board, boardHashMap[i][e])->team == (int)'w')
-                        {
-                            printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
-                        }
-                        else
-                        {
-                            printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
-                        }
-
-                        //if (j == board.size)
-                        /*{
-                            //printf(" (%d , %d) ", i, e);
-                            printf("\x1b[0m\x1b[37m+ ");
-                        }*/
-                    }
-            printf("\n");
-        }
-    }
-    else
-        for (e = 0; e <= 8; e++)
-        { //Y
-
-            if (e == 8)
-            {
-                printf("%s \n", "   _______________");
-                printf("%s \n", "   H G F E D C B A");
-            }
-            else
-                for (int i = -1; i < 8; i++) //X
-
-                    if (i == -1)
-                    {
-                        printf("%d| ", e + 1);
-                    }
-                    else
-                    {
-                        /*
-                        can = 'f';
-                        for (int j = 0; j < board.size; j++)
-                        {
-                            if (((int)(getArr1(&board, j)->type)) > 64 && ((int)(getArr1(&board, j)->type)) < 123 && (e == getArr1(&board, j)->posy && i == getArr1(&board, j)->posx))
-                            {
-
-                                if ((int)getArr1(&board, j)->team == (int)'w')
-                                {
-
-                                    printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, j)->type));
-                                }
-                                else
-                                {
-                                    printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, j)->type));
-                                }
-                                can = 't';
-                                break;
-                            }
-                        }
-                        if (can != 't')
-                        {
-                            printf("\x1b[0m\x1b[37m+ ");
-                        }*/
-
-                        if (boardHashMap[i][e] == -1)
-                        {
-                            printf("\x1b[0m\x1b[37m+ ");
-                        }
-                        else if ((int)getArr1(&board, boardHashMap[i][e])->team == (int)'w')
-                        {
-                            printf("\x1b[1m\x1b[97m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
-                        }
-                        else
-                        {
-                            printf("\x1b[1m\x1b[90m%c \x1b[0m", (getArr1(&board, boardHashMap[i][e])->type));
-                        }
-                    }
-            printf("\n");
-        }
 }
 //useless lol
 void copyArr(piece *target, piece *dest)
@@ -2391,10 +2490,10 @@ int main()
             destroyTree(ttAble2);
             destroyTree(ttAble_PV2);
             destroyTree(ttAble_PV);
-            ttAble = NULL;
-            ttAble2 = NULL;
-            ttAble_PV = NULL;
-            ttAble_PV2 = NULL;
+            ttAble[0] = NULL;
+            ttAble2[0] = NULL;
+            ttAble_PV[0] = NULL;
+            ttAble_PV2[0] = NULL;
             printf("\ndone.");
         }
         else
@@ -2440,7 +2539,8 @@ int main()
             bestValue = -10000000;
             long seconds = time(NULL);
             // gets the value of the board and best move is put in the Variable bestMove
-            int val = iterative_deepening(10, turn);
+            printf("turn%d \n ",turn);
+            int val =   negaMax1(5,-100000000, 1000000000 ,turn);
             printf("Took %ld seconds\n%lluNodes Recorded\nBest Move is %c%d  to %c%d \n ", time(0) - seconds, numNodes, ((7 - bestMove.posx) + 65), bestMove.posy + 1, (7 - bestMove.targetx) + 65, bestMove.targety + 1);
             printf("Bot confidence : %d\n", val);
             printf("\nEvaluation : \nMemory of movesDone : %d\nMemory of board :%d", movesDone.realSize, board.realSize);
@@ -2512,7 +2612,15 @@ int main()
                 {                       // if  the move is specified by the Human and is in the list of possible moves
 
                     movePiece(canMove, 7 - (((int)cat[2] - 65) % 32), (int)cat[3] - 49);
-
+                    struct Node* foundNodeAt;
+                    long long boardID = hash(&board);
+                    if (turn == 1)
+                    {
+                        foundNodeAt = search(ttAble[boardID%TABLE_SIZE], boardID);
+                    }
+                    else
+                        foundNodeAt = search(ttAble2[boardID%TABLE_SIZE], boardID);
+                    if(foundNodeAt != NULL) printf("Bot Eval : %d\n",foundNodeAt->value);
                     printf("%c, %d  to %c , %d   Real : %d , %d\n", 7 - pickedPosX + 65, pickedPosY + 1, cat[2], (int)cat[3] - 49, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posx, getArr1(&board, getPieceAtPos((((int)cat[2] - 65) % 32), (int)cat[3] - 49))->posy);
 
                     printf("\nTurn: %d\n", movesDone.size);
